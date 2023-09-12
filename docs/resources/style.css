@@ -1,0 +1,135 @@
+:root {
+    font-size: 18px;
+}
+
+body {
+	background-color: #62ABFE;
+	counter-reset: section;
+	font-size: 0.9rem !important;
+	color: #666;
+}
+
+main {
+    /* padding-left: 25px !important; */
+    /* padding-right: 25px !important; */
+    background-color: white;
+    box-shadow: 0px 3px 20px #333;
+    width:800px;
+    text-align: justify;
+    margin-top:0em;
+    padding-bottom: 30px;
+    padding-left: 20px;
+    padding-right: 20px;
+}
+
+.quarto-title {
+    padding-top:200px;
+    padding-left:20px;
+}
+.quarto-title-meta {
+    padding-left:20px;
+    border-bottom: 1.5px solid #44639b;
+}
+
+
+#title-block-header {
+    left: -20px;
+}
+
+#title-block-header .quarto-title-block>div>button {
+    padding-right: 20px;
+}
+
+h1, h2 {
+	color: #3E769A;
+}
+
+header {
+    position: relative;
+    /* left: -25px; */
+    /* width: 760px; */
+    width: 800px;
+    /* height: 95px; */
+    height: 185px;
+    background: url(banner-top.png) no-repeat;
+    display:inline-block;
+}
+
+.header-section-number {
+    color: inherit !important;
+}
+
+
+div.sourceCode {
+    background-color: none;
+    border: 0px;
+    border-radius: 0px;
+}
+
+
+code.sourceCode {
+    margin: 0 0 0px;
+    padding: 0;
+    padding-top: 2px;
+    padding-left: 3px;
+    border: 1px solid #d6d6d6;
+    border-left: 5px solid #3E769A;
+    overflow: hidden;
+    width: auto;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    border-radius: 0px;
+}
+code.sourceCode.r {
+    background: #FFFFE4;
+}
+
+pre.sourceCode {
+    padding:0em;
+}
+
+pre {
+    margin-bottom: 0em;
+    padding:0.5em;
+}
+
+#TOC {
+    margin: 85px 0px 20px 0px;
+    box-shadow: 0px 3px 20px #333;
+    width: 20%;
+    max-height: 90%;
+    overflow: auto;
+    margin-left: 2%;
+    position: fixed;
+    /* border: 1px solid #ccc; */
+    border-radius: 6px;
+    background-color: white;
+}
+
+.toc-content {
+    padding-left: 25px !important;
+    padding-right: 25px !important;
+    background-color: white;
+    box-shadow: 0px 3px 20px #333;
+    width:760px;
+    text-align: justify;
+}
+
+#toc-title {
+    color: white;
+    background-color:#446e9b;
+    border-color:#446e9b;
+    padding: 5px;
+    margin:0px;
+}
+
+.sidebar {
+    position:relative;
+}
+
+.sidebar.toc-left>*, .sidebar.margin-sidebar>* {
+    padding-top: 0em;
+}
+.sidebar nav[role=doc-toc] ul>li>a.active {
+    border-left: 0px solid #446e9b;
+    color: #446e9b !important;
+}
