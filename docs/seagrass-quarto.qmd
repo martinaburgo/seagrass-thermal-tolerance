@@ -1,0 +1,116 @@
+---
+title: "Seagrass Thermal Tolerance"
+author: "Martina Burgo"
+date: today
+date-format: "DD/MM/YYYY"
+format: 
+  html:
+    ## Format
+    theme: default
+    ## Table of contents
+    toc: true
+    toc-float: true
+    ## Numbering
+    number-sections: true
+    number-depth: 3
+    ## Layout
+    fig-caption-location: "bottom"
+    fig-align: "center"
+    fig-dpi: 72
+    tbl-cap-location: top
+    ## Code
+    code-fold: false
+    code-tools: true
+    code-summary: "Show the code"
+    code-line-numbers: true
+
+    ## Execution
+    execute:
+      echo: true
+      cache: true
+    ## Rendering
+    embed-resources: true
+crossref:
+  fig-title: '**Figure**'
+  fig-labels: arabic
+  tbl-title: '**Table**'
+  tbl-labels: arabic
+engine: knitr
+bibliography: ../docs/resources/references.bib
+output_dir: "docs"
+documentclass: article
+fontsize: 12pt
+mainfont: Arial
+mathfont: LiberationMono
+classoption: a4paper
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(cache.lazy = FALSE,
+                      tidy = "styler")
+options(tinytex.engine = "xelatex")
+```
+
+# Preparations
+
+## Load the necessary libraries
+
+```{r}
+#| label: libraries
+#| output: false
+#| eval: true
+#| warning: false
+#| message: false
+#| cache: false
+
+library(tidyverse)   #for data wrangling
+
+```
+
+## Read in the data
+
+The dataset contains all the metadata (e.g., experimental setups) for each study. We'll clean the data by keeping only the information important for the analysis and storing the dataset in 'data/processed'.
+
+```{r}
+#| label: readData
+seagrass
+```
+
+Then, save the cleaned data
+
+```{r}
+
+```
+
+# Summary of available data
+
+# Climate variables
+
+Data on mean monthly sea surface temperatures for the analysis was downloaded from the National Oceanic and Atmospheric Administration (https://psl.noaa.gov/data/gridded/data.cobe2.html). The variable used is 'sst.mon.mean.nc'. To investigate how seagrass thermal tolerance varies between species and populations, the following variables were created for each seagrass population:
+
+| Variable                                    | At population-level                       | At species-level                                                  |
+|------------------------|------------------------|------------------------|
+| MAT (mean annual temperature)               | Average MAT across years for one location | Average MAT across years averaged across the species distribution |
+| AV (annual variation)                       | Average AV across years for one location  | Max AV across years averaged across the species distribution      |
+| MTWA (maximum temperature of warmest moth)  | Max MTWA across years for one location    | Max MTWA across years averaged across the species distribution    |
+| Difference (Experimental temperature - MAT) |                                           |                                                                   |
+| Magnitude (Difference/AV)                   |                                           |                                                                   |
+
+For later
+
+```{r}
+seagrass_studies $ LOGtime <- log(seagrass_studies$Time) #as the range is very broad (5mins to 90 days)
+seagrass_studies $ survival_adjusted <- ifelse(seagrass_studies$Survival > 0.5, 1, 0) #adjustment of survival
+seagrass_studies <- subset(seagrass_studies, seagrass_studies$Time > 0.9) # removing very short durations of exposure (less than 1 hour)
+seagrass_studies$Date[is.na(seagrass_studies$Date)] <- 0 #change NAs in 0 for collection date to run the code later
+```
+
+# Session Info
+
+```{r}
+#| label: sessionInfo
+sessionInfo()
+```
