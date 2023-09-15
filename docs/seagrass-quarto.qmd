@@ -23,7 +23,6 @@ format:
     code-tools: true
     code-summary: "Show the code"
     code-line-numbers: true
-
     ## Execution
     execute:
       echo: true
@@ -54,6 +53,22 @@ knitr::opts_chunk$set(cache.lazy = FALSE,
 options(tinytex.engine = "xelatex")
 ```
 
+# Intro
+
+This dataset contains the data gathered from the systematic search and the climate variables calculated as summarised
+
+## Climate variables
+
+Data on mean monthly sea surface temperatures for the analysis was downloaded from the National Oceanic and Atmospheric Administration (https://psl.noaa.gov/data/gridded/data.cobe2.html). The variable used is 'sst.mon.mean.nc'. To investigate how seagrass thermal tolerance varies between species and populations, the following variables were created for each seagrass population:
+
+| Variable                                    | At population-level                       | At species-level                                                  |
+|------------------------|------------------------|------------------------|
+| MAT (mean annual temperature)               | Average MAT across years for one location | Average MAT across years averaged across the species distribution |
+| AV (annual variation)                       | Average AV across years for one location  | Max AV across years averaged across the species distribution      |
+| MTWA (maximum temperature of warmest moth)  | Max MTWA across years for one location    | Max MTWA across years averaged across the species distribution    |
+| Difference (Experimental temperature - MAT) |                                           |                                                                   |
+| Magnitude (Difference/AV)                   |                                           |                                                                   |
+
 # Preparations
 
 ## Load the necessary libraries
@@ -67,37 +82,153 @@ options(tinytex.engine = "xelatex")
 #| cache: false
 
 library(tidyverse)   #for data wrangling
+library(car)
+library(brms)
+library(patchwork)
+library(tidybayes)
+library(DHARMa)     #for residual diagnostics
+library(rstan)      #for interfacing with STAN
+library(emmeans)
 
+source('../R/functions.R')
 ```
 
 ## Read in the data
 
-The dataset contains all the metadata (e.g., experimental setups) for each study. We'll clean the data by keeping only the information important for the analysis and storing the dataset in 'data/processed'.
-
 ```{r}
 #| label: readData
-seagrass
+seagrass <- read.csv('../data/processed/data_calculatedv2.csv')
+seagrass |> str()
 ```
 
-Then, save the cleaned data
+Quick figure to show the available data:
 
 ```{r}
+seagrass |>
+  ggplot(aes(y = Survival, x = Temperature)) +
+  geom_point() + theme_classic()
+```
+
+And plotting the potential predictors to check if they're correlated:
+```{r}
+#| label: predictorCorrCheck
+seagrass |> corrplot::corrplot(cor())
 
 ```
 
-# Summary of available data
 
-# Climate variables
+There's two ways we could analyse data:
 
-Data on mean monthly sea surface temperatures for the analysis was downloaded from the National Oceanic and Atmospheric Administration (https://psl.noaa.gov/data/gridded/data.cobe2.html). The variable used is 'sst.mon.mean.nc'. To investigate how seagrass thermal tolerance varies between species and populations, the following variables were created for each seagrass population:
+1.  Binomial distribution: binning survival in either 1 (survival \> 0.5) or 0 (survival \<= 0)
 
-| Variable                                    | At population-level                       | At species-level                                                  |
-|------------------------|------------------------|------------------------|
-| MAT (mean annual temperature)               | Average MAT across years for one location | Average MAT across years averaged across the species distribution |
-| AV (annual variation)                       | Average AV across years for one location  | Max AV across years averaged across the species distribution      |
-| MTWA (maximum temperature of warmest moth)  | Max MTWA across years for one location    | Max MTWA across years averaged across the species distribution    |
-| Difference (Experimental temperature - MAT) |                                           |                                                                   |
-| Magnitude (Difference/AV)                   |                                           |                                                                   |
+2.  Bin survival into categories similar to bleaching index
+
+We'll start with fitting a binomial distribution first.
+
+# Binomial distribution approach
+
+First, we'll adjust the survival to fit a binomial distribution:
+
+```{r}
+seagrass <- seagrass |>
+  mutate(surv_adj = ifelse(Survival > 0.5, 1, 0))
+```
+
+Model formula: 
+
+$$
+\begin{align}
+y_i &\sim{} \mathcal{Bin}(n, p_i)\\
+ln\left(\frac{p_i}{1-p_i}\right) &= \beta_0 + \beta_1 x_i\\
+\beta_0 &\sim{} \mathcal{N}(0,2.5)\\
+\beta_1 &\sim{} \mathcal{N}(0,1)\\
+\end{align}
+$$
+## Fit model
+
+Fit the priors:
+```{r}
+#| label: priors
+
+priors <- prior(normal(0, 2.5), class = 'Intercept') +
+  prior(normal(0, 1), class = 'b')
+form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)), family = binomial(link = 'logit')) 
+
+seagrass.brm <- brm(form, prior = priors, data = seagrass, 
+                 sample_prior = 'only', 
+                 iter = 5000, 
+                 warmup = 1000, 
+                 chains = 3, cores = 3, 
+                 thin = 5, 
+                 refresh = 0, 
+                 backend = 'rstan') 
+```
+Check the priors
+ 
+```{r}
+#| label: priorsCheck
+
+seagrass.brm |> conditional_effects() |> plot(points = TRUE, ask = FALSE) |> wrap_plots()
+```
+
+Including posteriors:
+
+```{r}
+seagrass..brm2 <- seagrass.brm |>
+  update(sample_prior = 'yes')
+```
+
+Check model:
+
+```{r}
+seagrass.brm2 |> SUYR_prior_and_posterior()
+```
+
+MCMC sampling diagnostics:
+
+```{r}
+(seagrass.brm2$fit |> stan_trace()) + (seagrass.brm2$fit |> stan_ac()) + (seagrass.brm2$fit |> stan_rhat()) + (seagrass.brm2$fit |> stan_ess())
+
+```
+
+
+
+Posterior probability check:
+```{r}
+seagrass.brm2 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+
+Checking the residuals
+```{r}
+seagrass.resids <- make_brms_dharma_res(seagrass.brm2, integerResponse = FALSE)
+testUniformity(seagrass.resids)
+plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))
+plotResiduals(seagrass.resids, quantreg = FALSE)
+testDispersion(seagrass.resids)
+```
+
+### Partial effects plots 
+
+```{r}
+seagrass.brm2 |> 
+  conditional_effects(spaghetti = TRUE, ndraws = 100) |>
+  plot(points = TRUE, ask = FALSE)
+```
+# Model investigation 
+
+```{r}
+seagrass.brm2 |>
+  summarise_draws(median,
+                  HDInterval::hdi,
+                  rhat, length, ess_bulk, ess_tail) %>%
+  as.data.frame()
+```
+
+
+# Supplementary materials
+
+## Summary of available data
 
 For later
 
