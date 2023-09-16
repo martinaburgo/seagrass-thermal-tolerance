@@ -2,3 +2,5 @@ data/
 .Rproj.user
 .Rhistory
 *.Rproj
+docs/seagrass-quarto_files/
+docs/seagrass-quarto_cache/html/

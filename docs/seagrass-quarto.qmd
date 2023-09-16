@@ -62,7 +62,7 @@ This dataset contains the data gathered from the systematic search and the clima
 Data on mean monthly sea surface temperatures for the analysis was downloaded from the National Oceanic and Atmospheric Administration (https://psl.noaa.gov/data/gridded/data.cobe2.html). The variable used is 'sst.mon.mean.nc'. To investigate how seagrass thermal tolerance varies between species and populations, the following variables were created for each seagrass population:
 
 | Variable                                    | At population-level                       | At species-level                                                  |
-|------------------------|------------------------|------------------------|
+|---------------------|--------------------|-------------------------------|
 | MAT (mean annual temperature)               | Average MAT across years for one location | Average MAT across years averaged across the species distribution |
 | AV (annual variation)                       | Average AV across years for one location  | Max AV across years averaged across the species distribution      |
 | MTWA (maximum temperature of warmest moth)  | Max MTWA across years for one location    | Max MTWA across years averaged across the species distribution    |
@@ -82,9 +82,12 @@ Data on mean monthly sea surface temperatures for the analysis was downloaded fr
 #| cache: false
 
 library(tidyverse)   #for data wrangling
+library(stringr)
 library(car)
 library(brms)
 library(patchwork)
+library(corrplot)
+library(loo)
 library(tidybayes)
 library(DHARMa)     #for residual diagnostics
 library(rstan)      #for interfacing with STAN
@@ -97,8 +100,25 @@ source('../R/functions.R')
 
 ```{r}
 #| label: readData
-seagrass <- read.csv('../data/processed/data_calculatedv2.csv')
+seagrass <- read_csv('../data/processed/data_calculatedv2.csv', trim_ws = TRUE)[, -1]
 seagrass |> str()
+```
+
+Declare categorical variables and create a column with the scientific name of each seagrass:
+
+```{r}
+#| label: dataWrangling
+
+seagrass <- seagrass |>
+  mutate(Study = factor(Study),
+         Location = factor(Location),
+         Bioregion = factor(Bioregion),
+         Family = factor(Family),
+         Genus = factor(Genus),
+         Species = factor(Species),
+         Type = factor(Type),
+         Variable = factor(Variable),
+         Name = factor(paste(stringr::str_extract(Genus, "^.{1}"), '.', Species, sep = '')))
 ```
 
 Quick figure to show the available data:
@@ -109,13 +129,42 @@ seagrass |>
   geom_point() + theme_classic()
 ```
 
-And plotting the potential predictors to check if they're correlated:
+Some studies also looked at the lower thermal limit. Since we're interested in the upper thermal limit, any study with experimental temperature lower than MAT will be excluded.
 ```{r}
-#| label: predictorCorrCheck
-seagrass |> corrplot::corrplot(cor())
-
+seagrass <- seagrass |> filter(Temperature >= mat_population)
 ```
 
+
+Visual representation of the data:
+
+```{r}
+seagrass |> ggplot(aes(x = log10(Time), y = Temperature, color = Survival)) +
+  geom_point() + scale_x_continuous('Time (log10)') + 
+  scale_color_viridis_c(option = 'C') + theme_classic()
+```
+
+
+
+And plotting the potential predictors to check if they're correlated:
+
+::: panel-tableset
+### Scatterplot
+
+```{r}
+#| label: scatterPlot
+scatterplotMatrix(~Survival+log(Time)+Temperature+mat_population+av_population+mtwa_population+difference_population + magnitude_population + av_species + mat_species + mtwa_species + difference_species + magnitude_species, 
+                  data = seagrass,diagonal = list(method = 'boxplot'))
+```
+
+### Correlation plot
+
+```{r}
+#\ label: corrPlot
+seagrass |> dplyr::select(Time, Temperature, mat_population, av_population, mtwa_population, difference_population, magnitude_population, av_species, mat_species, mtwa_species, difference_species, magnitude_species) |> cor() |> corrplot()
+```
+:::
+
+As expected, most climate variables are correlated. To avoid problems associated with collinearity, magnitude will be used in the models to understand the effect of environmental conditions on seagrass thermal tolerance.
 
 There's two ways we could analyse data:
 
@@ -134,7 +183,7 @@ seagrass <- seagrass |>
   mutate(surv_adj = ifelse(Survival > 0.5, 1, 0))
 ```
 
-Model formula: 
+Model formula:
 
 $$
 \begin{align}
@@ -143,18 +192,27 @@ ln\left(\frac{p_i}{1-p_i}\right) &= \beta_0 + \beta_1 x_i\\
 \beta_0 &\sim{} \mathcal{N}(0,2.5)\\
 \beta_1 &\sim{} \mathcal{N}(0,1)\\
 \end{align}
-$$
-## Fit model
+$$ \
+
+## Moodel 1: effect of temperature and duration of heat stress
+
+### Fit model
+The model will be run using 'Study' as varying effect. This is to account for the variation methodology between study.
 
 Fit the priors:
+
 ```{r}
 #| label: priors
+brm1.form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)) + (1|Study), family = binomial(link = 'logit')) 
+
+brm1.form |> get_prior(data = seagrass) # to check which priors we need
 
 priors <- prior(normal(0, 2.5), class = 'Intercept') +
-  prior(normal(0, 1), class = 'b')
-form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)), family = binomial(link = 'logit')) 
+  prior(normal(0, 1), class = 'b') + 
+  prior(student_t(3, 0, 2.5), class = 'sd')
 
-seagrass.brm <- brm(form, prior = priors, data = seagrass, 
+
+seagrass.brm1p <- brm(brm1.form, prior = priors, data = seagrass, 
                  sample_prior = 'only', 
                  iter = 5000, 
                  warmup = 1000, 
@@ -163,43 +221,75 @@ seagrass.brm <- brm(form, prior = priors, data = seagrass,
                  refresh = 0, 
                  backend = 'rstan') 
 ```
+
 Check the priors
- 
+
 ```{r}
 #| label: priorsCheck
 
-seagrass.brm |> conditional_effects() |> plot(points = TRUE, ask = FALSE) |> wrap_plots()
+seagrass.brm1p |> conditional_effects() |> plot(points = TRUE, ask = FALSE) |> wrap_plots()
 ```
 
 Including posteriors:
 
 ```{r}
-seagrass..brm2 <- seagrass.brm |>
+seagrass.brm1 <- seagrass.brm1p |>
   update(sample_prior = 'yes')
 ```
 
 Check model:
 
 ```{r}
-seagrass.brm2 |> SUYR_prior_and_posterior()
+seagrass.brm1 |> SUYR_prior_and_posterior()
 ```
+
+Check that including the varying effect is sensible:
+```{r}
+brm1N.form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)), family = binomial(link = 'logit')) 
+
+brm1N.form |> get_prior(data = seagrass) # to check which priors we need
+
+priors <- prior(normal(0, 2.5), class = 'Intercept') +
+  prior(normal(0, 1), class = 'b')
+
+
+seagrass.brm1N <- brm(brm1N.form, prior = priors, data = seagrass, 
+                 sample_prior = 'yes', 
+                 iter = 5000, 
+                 warmup = 1000, 
+                 chains = 3, cores = 3, 
+                 thin = 5, 
+                 refresh = 0, 
+                 backend = 'rstan') 
+```
+
+Compare the two models:
+```{r}
+loo::loo(seagrass.brm1)
+loo::loo(seagrass.brm1N)
+loo::loo_compare(loo::loo(seagrass.brm1),
+                 loo::loo(seagrass.brm1N))
+#Random effects are useful and will be kept
+```
+
+
+### Diagnostics
 
 MCMC sampling diagnostics:
 
 ```{r}
-(seagrass.brm2$fit |> stan_trace()) + (seagrass.brm2$fit |> stan_ac()) + (seagrass.brm2$fit |> stan_rhat()) + (seagrass.brm2$fit |> stan_ess())
+(seagrass.brm1$fit |> stan_trace()) + (seagrass.brm1$fit |> stan_ac()) + (seagrass.brm1$fit |> stan_rhat()) + (seagrass.brm1$fit |> stan_ess())
 
 ```
-
-
 
 Posterior probability check:
+
 ```{r}
-seagrass.brm2 |> pp_check(type = 'dens_overlay', ndraws = 100)
+seagrass.brm1 |> pp_check(type = 'dens_overlay', ndraws = 100)
 ```
 
-
 Checking the residuals
+
 ```{r}
 seagrass.resids <- make_brms_dharma_res(seagrass.brm2, integerResponse = FALSE)
 testUniformity(seagrass.resids)
@@ -208,23 +298,23 @@ plotResiduals(seagrass.resids, quantreg = FALSE)
 testDispersion(seagrass.resids)
 ```
 
-### Partial effects plots 
+### Partial effects plots
 
 ```{r}
 seagrass.brm2 |> 
   conditional_effects(spaghetti = TRUE, ndraws = 100) |>
   plot(points = TRUE, ask = FALSE)
 ```
-# Model investigation 
+
+# Model investigation
 
 ```{r}
-seagrass.brm2 |>
+seagrass.brm1 |>
   summarise_draws(median,
                   HDInterval::hdi,
                   rhat, length, ess_bulk, ess_tail) %>%
   as.data.frame()
 ```
-
 
 # Supplementary materials
 
