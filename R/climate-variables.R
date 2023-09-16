@@ -19,7 +19,7 @@ library(IDPmisc)
 source('R/functions.R')
 
 ## LOAD DATA ----
-seagrass_studies <- readxl::read_excel('../data/primary/seagrass-thermal-tolerance-studies.xlsx', 
+seagrass_studies <- readxl::read_excel('data/primary/seagrass-thermal-tolerance-studies.xlsx', 
                                        sheet = 2)
 Edata <- seagrass_studies[, c("Authors", "Title of the publication", "Year of publication", 
                                         "Year of sample collection","Sample collection site", 
@@ -137,7 +137,7 @@ Edata $ mat_population <- NA
 Edata $ av_population <- NA
 
 for (i in 1:nrow(Edata)) {
-  Edata$mtwa_populationx[i] <- max(NaRV.omit(temp_df_fixed[i,])) #mtwa
+  Edata$mtwa_population[i] <- max(NaRV.omit(temp_df_fixed[i,])) #mtwa
   #loop to calculate climate variables for each year until sample collection date
   #if there is no collection date, the paper publication year will be used instead
   year <- 1960:ifelse(is.na(Edata$Date), Edata$Publication, Edata$Date)[i]
