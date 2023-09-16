@@ -202,7 +202,7 @@ The model will be run using 'Study' as varying effect. This is to account for th
 Fit the priors:
 
 ```{r}
-#| label: priors
+#| label: M1priors
 brm1.form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)) + (1|Study), family = binomial(link = 'logit')) 
 
 brm1.form |> get_prior(data = seagrass) # to check which priors we need
@@ -225,7 +225,7 @@ seagrass.brm1p <- brm(brm1.form, prior = priors, data = seagrass,
 Check the priors
 
 ```{r}
-#| label: priorsCheck
+#| label: M1priorsCheck
 
 seagrass.brm1p |> conditional_effects() |> plot(points = TRUE, ask = FALSE) |> wrap_plots()
 ```
@@ -233,6 +233,7 @@ seagrass.brm1p |> conditional_effects() |> plot(points = TRUE, ask = FALSE) |> w
 Including posteriors:
 
 ```{r}
+#| label: M1addPosteriors
 seagrass.brm1 <- seagrass.brm1p |>
   update(sample_prior = 'yes')
 ```
@@ -245,6 +246,7 @@ seagrass.brm1 |> SUYR_prior_and_posterior()
 
 Check that including the varying effect is sensible:
 ```{r}
+#| label: M1nullModel
 brm1N.form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)), family = binomial(link = 'logit')) 
 
 brm1N.form |> get_prior(data = seagrass) # to check which priors we need
@@ -265,6 +267,7 @@ seagrass.brm1N <- brm(brm1N.form, prior = priors, data = seagrass,
 
 Compare the two models:
 ```{r}
+#| label: M1compareModel
 loo::loo(seagrass.brm1)
 loo::loo(seagrass.brm1N)
 loo::loo_compare(loo::loo(seagrass.brm1),
@@ -278,6 +281,7 @@ loo::loo_compare(loo::loo(seagrass.brm1),
 MCMC sampling diagnostics:
 
 ```{r}
+#| label: M1Diagnostic
 (seagrass.brm1$fit |> stan_trace()) + (seagrass.brm1$fit |> stan_ac()) + (seagrass.brm1$fit |> stan_rhat()) + (seagrass.brm1$fit |> stan_ess())
 
 ```
@@ -291,43 +295,223 @@ seagrass.brm1 |> pp_check(type = 'dens_overlay', ndraws = 100)
 Checking the residuals
 
 ```{r}
-seagrass.resids <- make_brms_dharma_res(seagrass.brm2, integerResponse = FALSE)
+#| label: M1DHARMa
+seagrass.resids <- make_brms_dharma_res(seagrass.brm1, integerResponse = FALSE)
 testUniformity(seagrass.resids)
 plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))
 plotResiduals(seagrass.resids, quantreg = FALSE)
 testDispersion(seagrass.resids)
 ```
 
-### Partial effects plots
+### Save model
+```{r}
+#| label: M1SaveModel
+
+save(seagrass.brm1, seagrass.brm1N, seagrass.brm1p, file = '../data/modelled/Model1Binomial.RData')
+```
+
+
+## Model 2: effect of magnitude and time on survival (pop)
+
+### Fit model
+
+Fit the priors:
 
 ```{r}
-seagrass.brm2 |> 
+#| label: M2priors
+brm2.form <- bf(surv_adj|trials(1) ~ scale(magnitude_population)*scale(log(Time)) + mtwa_population + (1|Study), family = binomial(link = 'logit')) 
+
+brm2.form |> get_prior(data = seagrass) # to check which priors we need
+
+priors <- prior(normal(0, 2.5), class = 'Intercept') +
+  prior(normal(0, 10), class = 'b') + 
+  prior(student_t(3, 0, 2.5), class = 'sd')
+
+
+seagrass.brm2p <- brm(brm2.form, prior = priors, data = seagrass, 
+                 sample_prior = 'only', 
+                 iter = 5000, 
+                 warmup = 1000, 
+                 chains = 3, cores = 3, 
+                 thin = 5, 
+                 refresh = 0, 
+                 backend = 'rstan') 
+```
+
+Check the priors
+```{r}
+#| label: M2priorsCheck
+
+seagrass.brm2p |> conditional_effects() |> plot(points = TRUE, ask = FALSE) |> wrap_plots()
+```
+
+Including posteriors:
+
+```{r}
+#| label: M2addPosteriors
+seagrass.brm2 <- seagrass.brm2p |>
+  update(sample_prior = 'yes')
+```
+
+Check model:
+
+```{r}
+seagrass.brm2 |> SUYR_prior_and_posterior()
+```
+
+### Diagnostics
+
+MCMC sampling diagnostics:
+
+```{r}
+#| label: M2diagnostics
+(seagrass.brm2$fit |> stan_trace()) + (seagrass.brm2$fit |> stan_ac()) + (seagrass.brm2$fit |> stan_rhat()) + (seagrass.brm2$fit |> stan_ess())
+
+```
+
+Posterior probability check:
+
+```{r}
+seagrass.brm2 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+Checking the residuals
+
+```{r}
+#| label: M2DHARMa
+seagrass.resids <- make_brms_dharma_res(seagrass.brm2, integerResponse = FALSE) 
+testUniformity(seagrass.resids)
+plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))
+plotResiduals(seagrass.resids, quantreg = TRUE)
+testDispersion(seagrass.resids)
+```
+
+
+
+### Save model
+```{r}
+#| label: M2SaveModel
+
+save(seagrass.brm2, seagrass.brm2p, file = '../data/modelled/Model2Binomial.RData')
+```
+
+
+
+## Model 3: effect of magnitude and time on survival (spp)
+
+### Fit model
+
+Fit the priors:
+
+```{r}
+#| label: M3priors
+brm3.form <- bf(surv_adj|trials(1) ~ scale(magnitude_species)*scale(log(Time)) + mtwa_species + (1|Study), family = binomial(link = 'logit')) 
+
+brm3.form |> get_prior(data = seagrass) # to check which priors we need
+
+priors <- prior(normal(0, 2.5), class = 'Intercept') +
+  prior(normal(0, 10), class = 'b') + 
+  prior(student_t(3, 0, 2.5), class = 'sd')
+
+
+seagrass.brm3p <- brm(brm3.form, prior = priors, data = seagrass, 
+                 sample_prior = 'only', 
+                 iter = 5000, 
+                 warmup = 1000, 
+                 chains = 3, cores = 3, 
+                 thin = 5, 
+                 refresh = 0, 
+                 backend = 'rstan') 
+```
+
+Check the priors
+```{r}
+#| label: M3priorsCheck
+
+seagrass.brm3p |> conditional_effects() |> plot(points = TRUE, ask = FALSE) |> wrap_plots()
+```
+
+Including posteriors:
+
+```{r}
+#| label: M3addPosteriors
+seagrass.brm3 <- seagrass.brm3p |>
+  update(sample_prior = 'yes')
+```
+
+Check model:
+
+```{r}
+seagrass.brm3 |> SUYR_prior_and_posterior()
+```
+
+### Diagnostics
+
+MCMC sampling diagnostics:
+
+```{r}
+#| label: M3diagnostics
+(seagrass.brm3$fit |> stan_trace()) + (seagrass.brm3$fit |> stan_ac()) + (seagrass.brm3$fit |> stan_rhat()) + (seagrass.brm3$fit |> stan_ess())
+
+```
+
+Posterior probability check:
+
+```{r}
+seagrass.brm3 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+Checking the residuals
+
+```{r}
+#| label: M3DHARMa
+seagrass.resids <- make_brms_dharma_res(seagrass.brm3, integerResponse = FALSE) 
+testUniformity(seagrass.resids)
+plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))
+plotResiduals(seagrass.resids, quantreg = TRUE)
+testDispersion(seagrass.resids)
+```
+
+### Save model
+```{r}
+#| label: M3SaveModel
+
+save(seagrass.brm3, seagrass.brm3p, file = '../data/modelled/Model3Binomial.RData')
+```
+
+
+### Model investigation
+```{r}
+#| label: M3PartialPlot
+
+seagrass.brm3 |> 
   conditional_effects(spaghetti = TRUE, ndraws = 100) |>
   plot(points = TRUE, ask = FALSE)
+#to help interpret the model
 ```
 
-# Model investigation
-
+Results (odds table):
 ```{r}
-seagrass.brm1 |>
+#| label: M3results
+
+seagrass.brm3 |>
+  as.tibble() |>
+  mutate(across(everything(), exp)) |>
   summarise_draws(median,
                   HDInterval::hdi,
-                  rhat, length, ess_bulk, ess_tail) %>%
-  as.data.frame()
+                  rhat, length, ess_bulk, ess_tail,
+                  Pl = ~mean(.x < 1),
+                  Pg = ~mean(.x > 1)) |>
+  as.tibble() |>
+  dplyr::slice(1:5)
 ```
+
+
 
 # Supplementary materials
 
 ## Summary of available data
 
-For later
-
-```{r}
-seagrass_studies $ LOGtime <- log(seagrass_studies$Time) #as the range is very broad (5mins to 90 days)
-seagrass_studies $ survival_adjusted <- ifelse(seagrass_studies$Survival > 0.5, 1, 0) #adjustment of survival
-seagrass_studies <- subset(seagrass_studies, seagrass_studies$Time > 0.9) # removing very short durations of exposure (less than 1 hour)
-seagrass_studies$Date[is.na(seagrass_studies$Date)] <- 0 #change NAs in 0 for collection date to run the code later
-```
 
 # Session Info
 
