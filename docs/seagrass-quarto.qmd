@@ -194,7 +194,9 @@ ln\left(\frac{p_i}{1-p_i}\right) &= \beta_0 + \beta_1 x_i\\
 \end{align}
 $$ \
 
-## Moodel 1: effect of temperature and duration of heat stress
+
+
+## Model 1: effect of temperature and duration of heat stress
 
 ### Fit model
 The model will be run using 'Study' as varying effect. This is to account for the variation methodology between study.
@@ -311,6 +313,32 @@ save(seagrass.brm1, seagrass.brm1N, seagrass.brm1p, file = '../data/modelled/Mod
 ```
 
 
+### Model investigation
+```{r}
+#| label: M1PartialPlot
+
+seagrass.brm1 |> 
+  conditional_effects(spaghetti = TRUE, ndraws = 100) |>
+  plot(points = TRUE, ask = FALSE)
+#to help interpret the model
+```
+
+Results (odds table):
+```{r}
+#| label: M1results
+
+seagrass.brm1 |>
+  as.tibble() |>
+  mutate(across(everything(), exp)) |>
+  summarise_draws(median,
+                  HDInterval::hdi,
+                  rhat, length, ess_bulk, ess_tail,
+                  Pl = ~mean(.x < 1),
+                  Pg = ~mean(.x > 1)) |>
+  as.tibble() |>
+  dplyr::slice(1:4)
+```
+
 ## Model 2: effect of magnitude and time on survival (pop)
 
 ### Fit model
@@ -395,6 +423,32 @@ testDispersion(seagrass.resids)
 save(seagrass.brm2, seagrass.brm2p, file = '../data/modelled/Model2Binomial.RData')
 ```
 
+
+### Model investigation
+```{r}
+#| label: M2PartialPlot
+
+seagrass.brm2 |> 
+  conditional_effects(spaghetti = TRUE, ndraws = 100) |>
+  plot(points = TRUE, ask = FALSE)
+#to help interpret the model
+```
+
+Results (odds table):
+```{r}
+#| label: M2results
+
+seagrass.brm2 |>
+  as.tibble() |>
+  mutate(across(everything(), exp)) |>
+  summarise_draws(median,
+                  HDInterval::hdi,
+                  rhat, length, ess_bulk, ess_tail,
+                  Pl = ~mean(.x < 1),
+                  Pg = ~mean(.x > 1)) |>
+  as.tibble() |>
+  dplyr::slice(1:5)
+```
 
 
 ## Model 3: effect of magnitude and time on survival (spp)
@@ -506,9 +560,210 @@ seagrass.brm3 |>
   dplyr::slice(1:5)
 ```
 
+# Compare models
+```{r}
+rstan::loo(seagrass.brm1)
+```
+
+```{r}
+rstan::loo(seagrass.brm2)
+```
+
+```{r}
+rstan:::loo(seagrass.brm3)
+```
+
+
+```{r}
+loo::loo_compare(rstan::loo(seagrass.brm1),
+                 rstan::loo(seagrass.brm2),
+                 rstan::loo(seagrass.brm3))
+```
+
+# Model 4: effect of local climate on survival
+
+### Fit model
+The model will be run using 'Study' and 'Name' as varying effects.
+
+Fit the priors:
+
+```{r}
+#| label: M4priors
+brm4.form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)) + scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study), family = binomial(link = 'logit')) 
+
+brm4.form |> get_prior(data = seagrass) # to check which priors we need
+
+priors <- prior(normal(0, 2.5), class = 'Intercept') +
+  prior(normal(0, 1), class = 'b') + 
+  prior(student_t(3, 0, 2.5), class = 'sd')
+
+seagrass.brm4 <- brm(brm4.form, prior = priors, data = seagrass, 
+                 sample_prior = 'yes', 
+                 iter = 5000, 
+                 warmup = 1000, 
+                 chains = 3, cores = 3, 
+                 thin = 5, 
+                 refresh = 0, 
+                 backend = 'rstan') 
+```
+
+Check model:
+
+```{r}
+seagrass.brm4 |> SUYR_prior_and_posterior()
+```
+
+### Diagnostics
+
+MCMC sampling diagnostics:
+
+```{r}
+#| label: M4diagnostics
+(seagrass.brm4$fit |> stan_trace()) + (seagrass.brm4$fit |> stan_ac()) + (seagrass.brm4$fit |> stan_rhat()) + (seagrass.brm4$fit |> stan_ess())
+
+```
+
+Posterior probability check:
+
+```{r}
+seagrass.brm4 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+Checking the residuals
+
+```{r}
+#| label: M4DHARMa
+seagrass.resids <- make_brms_dharma_res(seagrass.brm4, integerResponse = FALSE) 
+testUniformity(seagrass.resids)
+plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))
+plotResiduals(seagrass.resids, quantreg = TRUE)
+testDispersion(seagrass.resids)
+```
+
+### Model investigation
+```{r}
+#| label: M4PartialPlot
+
+seagrass.brm4 |> 
+  conditional_effects(spaghetti = TRUE, ndraws = 100) |>
+  plot(points = TRUE, ask = FALSE)
+#to help interpret the model
+```
+
+Results (odds table):
+```{r}
+#| label: M4results
+
+seagrass.brm4 |>
+  as.tibble() |>
+  mutate(across(everything(), exp)) |>
+  summarise_draws(median,
+                  HDInterval::hdi,
+                  rhat, length, ess_bulk, ess_tail,
+                  Pl = ~mean(.x < 1),
+                  Pg = ~mean(.x > 1)) |>
+  as.tibble() |>
+  dplyr::slice(1:7)
+```
+
+# Model 5: effect of species climate on survival
+
+### Fit model
+The model will be run using 'Study' as varying effect.
+
+Fit the priors:
+
+```{r}
+#| label: M5priors
+brm5.form <- bf(surv_adj|trials(1) ~ scale(Temperature)*scale(log(Time)) + scale(difference_species) + scale(av_species) + scale(mtwa_species) + (1|Study), family = binomial(link = 'logit')) 
+
+brm5.form |> get_prior(data = seagrass) # to check which priors we need
+
+priors <- prior(normal(0, 2.5), class = 'Intercept') +
+  prior(normal(0, 1), class = 'b') + 
+  prior(student_t(3, 0, 2.5), class = 'sd')
+
+seagrass.brm5 <- brm(brm5.form, prior = priors, data = seagrass, 
+                 sample_prior = 'yes', 
+                 iter = 5000, 
+                 warmup = 1000, 
+                 chains = 3, cores = 3, 
+                 thin = 5, 
+                 refresh = 0, 
+                 backend = 'rstan') 
+```
+
+Check model:
+
+```{r}
+seagrass.brm5 |> SUYR_prior_and_posterior()
+```
+
+### Diagnostics
+
+MCMC sampling diagnostics:
+
+```{r}
+#| label: M5diagnostics
+(seagrass.brm5$fit |> stan_trace()) + (seagrass.brm5$fit |> stan_ac()) + (seagrass.brm5$fit |> stan_rhat()) + (seagrass.brm5$fit |> stan_ess())
+
+```
+
+Posterior probability check:
+
+```{r}
+seagrass.brm5 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+Checking the residuals
+
+```{r}
+#| label: M5DHARMa
+seagrass.resids <- make_brms_dharma_res(seagrass.brm5, integerResponse = FALSE) 
+testUniformity(seagrass.resids)
+plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))
+plotResiduals(seagrass.resids, quantreg = TRUE)
+testDispersion(seagrass.resids)
+```
+
+### Model investigation
+```{r}
+#| label: M5PartialPlot
+
+seagrass.brm5 |> 
+  conditional_effects(spaghetti = TRUE, ndraws = 100) |>
+  plot(points = TRUE, ask = FALSE)
+#to help interpret the model
+```
+
+Results (odds table):
+```{r}
+#| label: M5results
+
+seagrass.brm5 |>
+  as.tibble() |>
+  mutate(across(everything(), exp)) |>
+  summarise_draws(median,
+                  HDInterval::hdi,
+                  rhat, length, ess_bulk, ess_tail,
+                  Pl = ~mean(.x < 1),
+                  Pg = ~mean(.x > 1)) |>
+  as.tibble() |>
+  dplyr::slice(1:7)
+```
+
+
+# Compare models
+```{r}
+loo::loo_compare(rstan::loo(seagrass.brm1),
+                 rstan::loo(seagrass.brm4),
+                 rstan::loo(seagrass.brm5))
+```
 
 
 # Supplementary materials
+
+
 
 ## Summary of available data
 
