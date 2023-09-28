@@ -121,6 +121,9 @@ seagrass <- seagrass |>
          Name = factor(paste(stringr::str_extract(Genus, "^.{1}"), '.', Species, sep = '')))
 ```
 
+
+## Exploratory data analysis
+
 Quick figure to show the available data:
 
 ```{r}
@@ -139,10 +142,15 @@ Visual representation of the data:
 
 ```{r}
 seagrass |> ggplot(aes(x = log10(Time), y = Temperature, color = Survival)) +
-  geom_point() + scale_x_continuous('Time (log10)') + 
+  geom_point(size = 3) + scale_x_continuous('Time (log10)') + 
   scale_color_viridis_c(option = 'C') + theme_classic()
 ```
 
+```{r}
+seagrass |>
+  ggplot(aes(y = Survival, x = difference_species, color = av_species)) +
+  geom_point(size = 3) + theme_classic()
+```
 
 
 And plotting the potential predictors to check if they're correlated:
@@ -170,9 +178,9 @@ There's two ways we could analyse data:
 
 1.  Binomial distribution: binning survival in either 1 (survival \> 0.5) or 0 (survival \<= 0)
 
-2.  Bin survival into categories similar to bleaching index
+2.  Using a beta distribution (zero and one inflated)
 
-We'll start with fitting a binomial distribution first.
+
 
 # BINOMIAL DISTRIBUTION
 
@@ -190,7 +198,7 @@ $$
 y_i &\sim{} \mathcal{Bin}(n, p_i)\\
 ln\left(\frac{p_i}{1-p_i}\right) &= \beta_0 + \beta_1 x_i\\
 \beta_0 &\sim{} \mathcal{N}(0,2.5)\\
-\beta_1 &\sim{} \mathcal{N}(0,1)\\
+\beta_1 &\sim{} \mathcal{N}(0,10)\\
 \end{align}
 $$ \
 
@@ -513,12 +521,12 @@ Fit the priors:
 
 ```{r}
 #| label: M4priors
-brm4.form <- bf(surv_adj|trials(1) ~ scale(log(Time))*scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study), family = binomial(link = 'logit')) 
+brm4.form <- bf(surv_adj|trials(1) ~ scale(log(Time)) + scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study), family = binomial(link = 'logit')) 
 
 brm4.form |> get_prior(data = seagrass) # to check which priors we need
 
 priors4 <- prior(normal(0, 2.5), class = 'Intercept') +
-  prior(normal(0, 1), class = 'b') + 
+  prior(normal(0, 10), class = 'b') + 
   prior(student_t(3, 0, 2.5), class = 'sd')
 
 seagrass.brm4 <- brm(brm4.form, prior = priors4, data = seagrass, 
@@ -612,7 +620,7 @@ brm5.form <- bf(surv_adj|trials(1) ~ scale(log(Time)) + scale(difference_species
 brm5.form |> get_prior(data = seagrass) # to check which priors we need
 
 priors5 <- prior(normal(0, 2.5), class = 'Intercept') +
-  prior(normal(0, 1), class = 'b') + 
+  prior(normal(0, 10), class = 'b') + 
   prior(student_t(3, 0, 2.5), class = 'sd')
 
 seagrass.brm5 <- brm(brm5.form, prior = priors5, data = seagrass, 
@@ -714,7 +722,7 @@ $$
 
 ### Fit the model 
 ```{r}
-brm6.form <- bf(Survival ~ scale(log(Time))*scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study),
+brm6.form <- bf(Survival ~ scale(log(Time)) + scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study),
                    family = zero_one_inflated_beta())
 
 get_prior(brm6.form, data = seagrass)
@@ -768,7 +776,7 @@ seagrass.brm6$fit |> stan_ess()
 
 Dens overlay
 ```{r}
-seagrass.brm6 |> pp_check(type = 'dens_overlay', ndraws = 100) #maybe make priors smaller?
+seagrass.brm6 |> pp_check(type = 'dens_overlay', ndraws = 100)
 ```
 
 DHARMa
@@ -813,7 +821,7 @@ seagrass.brm6 |>
 
 ### Fit the model 
 ```{r}
-brm7.form <- bf(Survival ~ scale(log(Time))*scale(difference_species) + scale(av_species) + scale(mtwa_species) + (1|Study),
+brm7.form <- bf(Survival ~ scale(log(Time)) + scale(difference_species) + scale(av_species) + scale(mtwa_species) + (1|Study),
                    family = zero_one_inflated_beta())
 
 get_prior(brm7.form, data = seagrass)
@@ -867,7 +875,7 @@ seagrass.brm7$fit |> stan_ess()
 
 Dens overlay
 ```{r}
-seagrass.brm7 |> pp_check(type = 'dens_overlay', ndraws = 100) #maybe make priors smaller?
+seagrass.brm7 |> pp_check(type = 'dens_overlay', ndraws = 100) 
 ```
 
 DHARMa
@@ -906,10 +914,111 @@ seagrass.brm7 |>
   dplyr::slice(1:7)
 ```
 
+## Model 8: effect of temp and type
+
+### Fit the model 
+```{r}
+brm8.form <- bf(Survival ~ scale(log(Time)) + scale(Temperature) + Type + (1|Study),
+                   family = zero_one_inflated_beta())
+
+get_prior(brm8.form, data = seagrass)
+
+seagrass |> 
+  group_by(Type) |>
+  summarise(logit(median(Survival)),
+            logit(mad(Survival)))
+
+priors8 <- prior(normal(-4, 4), class = 'Intercept') +
+  prior(normal(0, 5), class = 'b') + 
+  prior(student_t(3, 0,5), class = 'sd')  +
+  prior(gamma(0.01, 0.01), class = 'phi') +
+  prior(beta(1, 1), class = 'zoi') +
+  prior(beta(1, 1), class = 'coi')
+
+seagrass.brm8p <- brm(brm8.form, prior = priors8, data = seagrass, 
+                 sample_prior = 'only', 
+                 iter = 5000, 
+                 warmup = 1000, 
+                 chains = 3, cores = 3, 
+                 thin = 5, 
+                 control = list(adapt_delta = 0.99, max_treedepth = 20),
+                 refresh = 100, 
+                 backend = 'rstan') 
+```
+
+Check priors:
+```{r}
+seagrass.brm8p |> conditional_effects() |> plot(points = TRUE, ask = FALSE)
+```
+
+Add the data:
+```{r}
+seagrass.brm8 <- update(seagrass.brm8p, sample_prior = 'yes')
+```
+
+
+```{r}
+seagrass.brm8 |> SUYR_prior_and_posterior()
+```
+
+### Diagnostics
+MCMC sampling diagnostics
+```{r}
+seagrass.brm8$fit |> stan_trace()
+seagrass.brm8$fit |> stan_ac()
+seagrass.brm8$fit |> stan_rhat()
+seagrass.brm8$fit |> stan_ess()
+```
+
+
+Dens overlay
+```{r}
+seagrass.brm8 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+DHARMa
+```{r}
+seagrass.resids <- make_brms_dharma_res(seagrass.brm8, integerResponse = FALSE)
+wrap_elements(~testUniformity(seagrass.resids)) +
+  wrap_elements(~plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))) + 
+  wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
+  wrap_elements(~testDispersion(seagrass.resids)) 
+```
+### Save model
+```{r}
+#| label: M6SaveModel
+
+save(seagrass.brm8, seagrass, priors8, brm8.form, file = '../data/modelled/Model8Beta.RData')
+```
+
+
+
+### Model investigation
+```{r}
+seagrass.brm8 |> 
+  conditional_effects(spaghetti = TRUE, ndraws = 100) |>
+  plot(points = TRUE, ask = FALSE)
+#to help interpret the model
+```
+
+```{r}
+seagrass.brm8 |>
+  as_draws_df() |>
+  mutate(across(everything(), exp)) |> #to go from log scale to odds ratio
+  summarise_draws(median, HDInterval::hdi, rhat, length, ess_bulk, ess_tail,
+                  Pl = ~ mean(.x < 1),
+                  Pg = ~ mean(.x > 1)) |>
+  as_tibble() |>
+  dplyr::slice(1:5)
+```
+
+
+
 ## Compare models
 ```{r}
 loo::loo_compare(rstan::loo(seagrass.brm6),
-                 rstan::loo(seagrass.brm7))
+                 rstan::loo(seagrass.brm7),
+                 rstan::loo(seagrass.brm8))
 ```
 
 # Supplementary materials
