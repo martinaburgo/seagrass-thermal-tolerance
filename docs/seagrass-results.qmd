@@ -1,0 +1,522 @@
+---
+title: "Seagrass Thermal Tolerance - model investigation"
+author: "Martina Burgo"
+date: today
+date-format: "DD/MM/YYYY"
+format: 
+  html:
+    ## Format
+    theme: default
+    ## Table of contents
+    toc: true
+    toc-float: true
+    ## Numbering
+    number-sections: true
+    number-depth: 3
+    ## Layout
+    fig-caption-location: "bottom"
+    fig-align: "center"
+    fig-dpi: 72
+    tbl-cap-location: top
+    ## Code
+    code-fold: false
+    code-tools: true
+    code-summary: "Show the code"
+    code-line-numbers: true
+    ## Execution
+    execute:
+      echo: true
+      cache: true
+    ## Rendering
+    embed-resources: true
+crossref:
+  fig-title: '**Figure**'
+  fig-labels: arabic
+  tbl-title: '**Table**'
+  tbl-labels: arabic
+engine: knitr
+bibliography: ../docs/resources/references.bib
+output_dir: "docs"
+documentclass: article
+fontsize: 12pt
+mainfont: Arial
+mathfont: LiberationMono
+classoption: a4paper
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(cache.lazy = FALSE,
+                      tidy = "styler")
+options(tinytex.engine = "xelatex")
+```
+
+# Preparations
+
+## Load the necessary libraries
+
+```{r}
+#| label: libraries
+#| output: false
+#| eval: true
+#| warning: false
+#| message: false
+#| cache: false
+
+library(tidyverse)   #for data wrangling
+library(stringr)
+library(car)
+library(brms)
+library(patchwork)
+library(corrplot)
+library(loo)
+library(tidybayes)
+library(DHARMa)     #for residual diagnostics
+library(rstan)      #for interfacing with STAN
+library(emmeans)
+library(ggridges)   #for ridge plots 
+
+source('../R/functions.R')
+```
+
+## Read in the data
+```{r}
+#| label: loadData
+
+load(file = '../data/modelled/Model6Beta.RData')
+load(file = '../data/modelled/Model7Beta.RData')
+load(file = '../data/modelled/Model8Beta.RData')
+```
+
+# Results
+
+## Compare models
+```{r}
+loo::loo_compare(rstan::loo(seagrass.brm6),
+                 rstan::loo(seagrass.brm7),
+                 rstan::loo(seagrass.brm8))
+```
+
+
+## Basic model
+
+### Effect sizes
+```{r}
+seagrass.brm8 |>
+  as_draws_df() |>
+  mutate(across(everything(), exp)) |> #to go from log scale to odds ratio
+  dplyr::select(matches("^b_.*|^sd_.*")) |> 
+  summarise_draws(median, HDInterval::hdi, rhat, length, ess_bulk, ess_tail,
+                  Pl = ~ mean(.x < 1),
+                  Pg = ~ mean(.x > 1)) |>
+  as_tibble()
+```
+
+```{r}
+1.05/(1+1.05)
+#the intercept is relative to the average of all other predictors
+```
+```{r}
+100*(0.68-1) #for each unit increase of time, the rate of survival declines by 32% 
+```
+
+```{r}
+100*(0.48-1) #for each unit increase of temperature, the rate of survival declines by 52% 
+```
+
+```{r}
+#| fig-width: 31.49
+#| fig-height: 19.68
+
+seagrass.brm8 |> gather_draws(`^b_.*`, regex = TRUE) |>
+  filter(.variable != 'b_Intercept') |>
+  ggplot() +
+  geom_density_ridges_gradient(aes(x = exp(.value),
+                                   y = .variable,
+                                   fill = stat(x)),
+                               alpha = 0.4, colour = 'white',
+                               quantile_lines = TRUE,
+                               quantiles = c(0.025, 0.975)) +
+  geom_vline(xintercept = 1, linetype = 'dashed') +
+  scale_x_continuous(trans = scales::log2_trans(), name = '') +
+  scale_y_discrete(name = '', labels = c('Time', 'Temperature', 'Type')) +
+  scale_fill_viridis_c(option = 'D') + theme_classic() +
+  theme(text = element_text(colour = 'black'), 
+        legend.position = 'none', 
+        axis.text = element_text(size = rel(1.5)))
+```
+
+### Survival ~ Temp + Time
+```{r}
+newdata <- with(seagrass,
+                list(Temperature = seq(from = 1,
+                                       to = max (Temperature),
+                                       len = 20),
+                            Time = seq(from = 1,
+                                       to = 336,
+                                       len = 14))) #two weeks of heat stress, at 1-day intervals
+fit <- seagrass.brm8 |> 
+  emmeans(~Temperature|Time, at = newdata) |>
+  gather_emmeans_draws() |>
+  mutate(.value = plogis(.value)) |>
+  group_by(Temperature, Time) |>
+  summarise(median = median(.value)) |>
+  as.data.frame()
+```
+
+```{r}
+#| fig-width: 31.49
+#| fig-height: 19.68
+
+fit |> 
+  ggplot(aes(y = Temperature, x = Time, fill = median)) + 
+  geom_tile() +
+  scale_x_continuous(name = 'Time (days)', 
+                     n.breaks = 14, 
+                     labels = c((seq(24, 336, len = 14)/24))) + #adjusts the labels to show days instead of hours
+  scale_y_continuous(expression("Temp difference ("*~degree*C*")"),
+                     n.breaks = 10) +
+  scale_fill_viridis_c(option = 'C', name = '') + theme_classic() +
+  theme(text = element_text(colour = 'black'), 
+        axis.text = element_text(size = rel(1.2)),
+        axis.title = element_text(size = rel(1.5)))
+```
+
+## Population-level model
+
+### Effect sizes
+```{r}
+seagrass.brm6 |>
+  as_draws_df() |>
+  mutate(across(everything(), exp)) |> #to go from log scale to odds ratio
+  dplyr::select(matches("^b_.*|^sd_.*")) |> 
+  summarise_draws(median, HDInterval::hdi, rhat, length, ess_bulk, ess_tail,
+                  Pl = ~ mean(.x < 1),
+                  Pg = ~ mean(.x > 1)) |>
+  as_tibble()
+```
+
+```{r}
+1.19/(1+1.19)
+#the intercept is relative to the average of all other predictors
+```
+```{r}
+100*(0.66-1) #for each unit increase of time, the rate of survival declines by 34% 
+```
+```{r}
+100*(0.49-1) #for each unit increase of diff_pop, the rate of survival declines by 51% 
+```
+```{r}
+100*(1.32-1) #for each unit increase of av_pop, the rate of survival increase by 32%
+```
+```{r}
+100*(0.69-1) #for each unit increase of mtwa_pop, the rate of survival declines by 31% 
+```
+```{r}
+#| fig-width: 31.49
+#| fig-height: 19.68
+
+seagrass.brm6 |> gather_draws(`^b_.*`, regex = TRUE) |>
+  filter(.variable != 'b_Intercept') |>
+  ggplot() +
+  geom_density_ridges_gradient(aes(x = exp(.value),
+                                   y = .variable,
+                                   fill = stat(x)),
+                               alpha = 0.4, colour = 'white',
+                               quantile_lines = TRUE,
+                               quantiles = c(0.025, 0.975)) +
+  geom_vline(xintercept = 1, linetype = 'dashed') +
+  scale_x_continuous(trans = scales::log2_trans(), name = '') +
+  scale_y_discrete(name = '', labels = c('AV', 'Diff', 'Time', 'Time*Diff', 'MTWA')) +
+  scale_fill_viridis_c(option = 'D') + theme_classic() +
+  theme(text = element_text(colour = 'black'), 
+        legend.position = 'none', 
+        axis.text = element_text(size = rel(1.5)))
+```
+
+### Survival ~ Diff + AV
+```{r}
+newdata2 <- with(seagrass,
+                list(difference_population = seq(from = 1,
+                                                        to = max (difference_population),
+                                                        len = 20),
+                     av_population = c(quantile(av_population)[2] |> round(0),
+                                       quantile(av_population)[5] |> round(0))))
+fit2 <- seagrass.brm6 |> 
+  emmeans(~difference_population|av_population, at = newdata2) |>
+  gather_emmeans_draws() |>
+  mutate(.value = plogis(.value)) |>
+  group_by(difference_population, av_population) |>
+  summarise(median_hdci(.value)) |>
+  as.data.frame()
+```
+
+```{r}
+#| fig-width: 31.49
+#| fig-height: 19.68
+
+fit2 |> 
+  mutate(av_population = factor(av_population)) |>
+  ggplot(aes(x = difference_population,
+             y = y, 
+             color = av_population)) + 
+  geom_line() + 
+  geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = av_population), alpha = 0.2) +
+  scale_color_discrete(guide = 'none') +
+  scale_fill_discrete('AV') +
+  scale_x_continuous(expression("Temp difference ("*~degree*C*")"),
+                     n.breaks = 10) +
+  scale_y_continuous('Survival', limits = c(0,1)) +
+  theme_classic()  +
+  theme(text = element_text(colour = 'black'), 
+        axis.text = element_text(size = rel(1.2)),
+        axis.title = element_text(size = rel(1.5)),
+        legend.text = element_text(size = rel(1.2)),
+        legend.title = element_text(size = rel(1.5)))
+```
+
+At what range of temperature difference does higher AV results in survival increase of at least 25%?
+```{r}
+seagrass.brm6 |> 
+  emmeans(~difference_population|av_population, at = newdata2, type = 'response') |> 
+  gather_emmeans_draws() |> 
+  mutate(Sur_diff = plogis(.value)) |>
+  group_by(.draw, difference_population) |>
+  summarise(Surv_diff = diff(Sur_diff)) |>
+  ungroup() |>
+  filter(Surv_diff >= 0.25) |>
+  summarise(median_hdci(difference_population),
+            Pl = mean(difference_population < 1),
+            Pg = mean(difference_population > 1))
+```
+
+At what temp difference is the survival improvement highest between AV?
+```{r}
+seagrass.brm6 |> 
+  emmeans(~difference_population|av_population, at = newdata2, type = 'response') |> 
+  gather_emmeans_draws() |> 
+  mutate(Sur_diff = plogis(.value)) |>
+  group_by(.draw, difference_population) |>
+  summarise(Sur_diff = diff(Sur_diff)) |>
+  ungroup() |>
+  group_by(.draw) |>
+  filter(difference_population == difference_population[which.max(Sur_diff)]) |>
+  ungroup() |>
+  summarise(median_hdci(difference_population),
+            Pl = mean(difference_population < 1),
+            Pg = mean(difference_population > 1))
+```
+
+### Survival ~ Diff + MTWA
+```{r}
+newdata3 <- with(seagrass,
+                list(difference_population = seq(from = 1,
+                                                        to = max (difference_population),
+                                                        len = 20),
+                     mtwa_population = c(quantile(mtwa_population)[2] |> round(0),
+                                         quantile(mtwa_population)[5] |> round(0))))
+fit3 <- seagrass.brm6 |> 
+  emmeans(~difference_population|mtwa_population, at = newdata3) |>
+  gather_emmeans_draws() |>
+  mutate(.value = plogis(.value)) |>
+  group_by(difference_population, mtwa_population) |>
+  summarise(median_hdci(.value)) |>
+  as.data.frame()
+```
+
+```{r}
+#| fig-width: 31.49
+#| fig-height: 19.68
+
+fit3 |> 
+  mutate(mtwa_population = factor(mtwa_population)) |>
+  ggplot(aes(x = difference_population,
+             y = y, 
+             color = mtwa_population)) + 
+  geom_line() + 
+  geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = mtwa_population), alpha = 0.2) +
+  scale_color_discrete(guide = 'none') +
+  scale_fill_discrete('MTWA') +
+  scale_x_continuous(expression("Temp difference ("*~degree*C*")"),
+                     n.breaks = 10) +
+  scale_y_continuous('Survival', limits = c(0,1)) +
+  theme_classic()  +
+  theme(text = element_text(colour = 'black'), 
+        axis.text = element_text(size = rel(1.2)),
+        axis.title = element_text(size = rel(1.5)),
+        legend.text = element_text(size = rel(1.2)),
+        legend.title = element_text(size = rel(1.5)))
+```
+
+
+### LD50
+For Temp diff
+```{r}
+seagrass.brm6 |> 
+  emmeans(~difference_population, 
+          at = with(seagrass, 
+                    list(difference_population = seq(from = 1,
+                                                     to = max (difference_population),
+                                                     len = 20))), 
+                    type = 'response') |> 
+  gather_emmeans_draws() |> 
+  mutate(.value = plogis(.value)) |>
+  filter(.value >= 0.49 & .value <= 0.51) |>
+  ungroup() |>
+  summarise(median_hdci(difference_population),
+            Pl = mean(difference_population < 1),
+            Pg = mean(difference_population > 1))
+```
+
+For Time (in hours) at three temp diff
+```{r}
+seagrass.brm6 |> 
+  emmeans(~Time|difference_population, 
+          at = with(seagrass, 
+                    list(Time = seq(from = 1,
+                                    to = max(Time),
+                                    len = 50),
+                         difference_population = c(5, 10, 15))), 
+                    type = 'response') |> 
+  gather_emmeans_draws() |>
+  mutate(.value = plogis(.value)) |>
+  filter(.value >= 0.49 & .value <= 0.51) |>
+  ungroup() |>
+  group_by(difference_population) |>
+  summarise(median_hdci(Time),
+            Pl = mean(Time < 1),
+            Pg = mean(Time > 1))
+```
+
+## Species-level model
+
+### Effect sizes
+```{r}
+seagrass.brm7 |>
+  as_draws_df() |>
+  mutate(across(everything(), exp)) |> #to go from log scale to odds ratio
+  dplyr::select(matches("^b_.*|^sd_.*")) |> 
+  summarise_draws(median, HDInterval::hdi, rhat, length, ess_bulk, ess_tail,
+                  Pl = ~ mean(.x < 1),
+                  Pg = ~ mean(.x > 1)) |>
+  as_tibble()
+```
+
+```{r}
+1.17/(1+1.17)
+#the intercept is relative to the average of all other predictors
+```
+```{r}
+100*(0.7-1) #for each unit increase of time, the rate of survival declines by 30% 
+```
+```{r}
+100*(0.46-1) #for each unit increase of diff_spp, the rate of survival declines by 55% 
+```
+
+```{r}
+100*(0.7-1) #for each unit increase of mtwa_spp, the rate of survival declines by 30% 
+```
+```{r}
+#| fig-width: 31.49
+#| fig-height: 19.68
+
+seagrass.brm7 |> gather_draws(`^b_.*`, regex = TRUE) |>
+  filter(.variable != 'b_Intercept') |>
+  ggplot() +
+  geom_density_ridges_gradient(aes(x = exp(.value),
+                                   y = .variable,
+                                   fill = stat(x)),
+                               alpha = 0.4, colour = 'white',
+                               quantile_lines = TRUE,
+                               quantiles = c(0.025, 0.975)) +
+  geom_vline(xintercept = 1, linetype = 'dashed') +
+  scale_x_continuous(trans = scales::log2_trans(), name = '') +
+  scale_y_discrete(name = '', labels = c('AV', 'Diff', 'Time', 'Time*Diff', 'MTWA')) +
+  scale_fill_viridis_c(option = 'D') + theme_classic() +
+  theme(text = element_text(colour = 'black'), 
+        legend.position = 'none', 
+        axis.text = element_text(size = rel(1.5)))
+```
+
+### Survival ~ Diff + MTWA
+```{r}
+newdata4 <- with(seagrass,
+                list(difference_species = seq(from = 1,
+                                                        to = max (difference_species),
+                                                        len = 20),
+                     mtwa_species = c(quantile(mtwa_species)[2] |> round(0),
+                                         quantile(mtwa_species)[5] |> round(0))))
+fit4 <- seagrass.brm7 |> 
+  emmeans(~difference_species|mtwa_species, at = newdata4) |>
+  gather_emmeans_draws() |>
+  mutate(.value = plogis(.value)) |>
+  group_by(difference_species, mtwa_species) |>
+  summarise(median_hdci(.value)) |>
+  as.data.frame()
+```
+
+```{r}
+#| fig-width: 31.49
+#| fig-height: 19.68
+
+fit4 |> 
+  mutate(mtwa_species = factor(mtwa_species)) |>
+  ggplot(aes(x = difference_species,
+             y = y, 
+             color = mtwa_species)) + 
+  geom_line() + 
+  geom_ribbon(aes(ymin = ymin, ymax = ymax, fill = mtwa_species), alpha = 0.2) +
+  scale_color_discrete(guide = 'none') +
+  scale_fill_discrete('MTWA') +
+  scale_x_continuous(expression("Temp difference ("*~degree*C*")"),
+                     n.breaks = 10) +
+  scale_y_continuous('Survival', limits = c(0,1)) +
+  theme_classic()  +
+  theme(text = element_text(colour = 'black'), 
+        axis.text = element_text(size = rel(1.2)),
+        axis.title = element_text(size = rel(1.5)),
+        legend.text = element_text(size = rel(1.2)),
+        legend.title = element_text(size = rel(1.5)))
+```
+
+
+### LD50
+For Temp diff
+```{r}
+seagrass.brm7 |> 
+  emmeans(~difference_species, 
+          at = with(seagrass, 
+                    list(difference_species = seq(from = 1,
+                                                     to = max (difference_species),
+                                                     len = 20))), 
+                    type = 'response') |> 
+  gather_emmeans_draws() |> 
+  mutate(.value = plogis(.value)) |>
+  filter(.value >= 0.49 & .value <= 0.51) |>
+  ungroup() |>
+  summarise(median_hdci(difference_species),
+            Pl = mean(difference_species < 1),
+            Pg = mean(difference_species > 1))
+```
+
+For Time (in hours) at three temp diff
+```{r}
+seagrass.brm7 |> 
+  emmeans(~Time|difference_species, 
+          at = with(seagrass, 
+                    list(Time = seq(from = 1,
+                                    to = max(Time),
+                                    len = 50),
+                         difference_species = c(5, 10, 15))), 
+                    type = 'response') |> 
+  gather_emmeans_draws() |>
+  mutate(.value = plogis(.value)) |>
+  filter(.value >= 0.49 & .value <= 0.51) |>
+  ungroup() |>
+  group_by(difference_species) |>
+  summarise(median_hdci(Time),
+            Pl = mean(Time < 1),
+            Pg = mean(Time > 1))
+```

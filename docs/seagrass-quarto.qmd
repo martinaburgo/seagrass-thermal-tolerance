@@ -1,5 +1,5 @@
 ---
-title: "Seagrass Thermal Tolerance"
+title: "Seagrass Thermal Tolerance - model fitting"
 author: "Martina Burgo"
 date: today
 date-format: "DD/MM/YYYY"
