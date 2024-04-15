@@ -1,5 +1,5 @@
 ---
-title: "Seagrass Thermal Tolerance - model fitting"
+title: "Seagrass Thermal Tolerance - model exploration"
 author: "Martina Burgo"
 date: today
 date-format: "DD/MM/YYYY"
@@ -132,9 +132,13 @@ seagrass |>
   geom_point() + theme_classic()
 ```
 
-Some studies also looked at the lower thermal limit. Since we're interested in the upper thermal limit, any study with experimental temperature lower than MAT will be excluded.
+Some studies also looked at the lower thermal limit. Since we're interested in the upper thermal limit, any study with experimental temperature lower than MAT will be excluded.Some studies exposed seagrasses to hight heat stress for very short periods of time (< 1 hour) and these studies were excluded as they do not represent realistic in-situ conditions.
 ```{r}
-seagrass <- seagrass |> filter(Temperature >= mat_population)
+seagrass <- seagrass |> 
+  filter(Temperature >= mat_population) |>
+  filter(Time >= 1)
+write.csv(seagrass, file = '../data/processed/seagrass_subset.csv')
+
 ```
 
 
@@ -722,7 +726,7 @@ $$
 
 ### Fit the model 
 ```{r}
-brm6.form <- bf(Survival ~ scale(log(Time)) + scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study),
+brm6.form <- bf(Survival ~ scale(log(Time)) * scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study),
                    family = zero_one_inflated_beta())
 
 get_prior(brm6.form, data = seagrass)
@@ -787,13 +791,13 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 ```
+
 ### Save model
 ```{r}
 #| label: M6SaveModel
 
 save(seagrass.brm6, seagrass, priors6, brm6.form, file = '../data/modelled/Model6Beta.RData')
 ```
-
 
 
 ### Model investigation
@@ -821,7 +825,7 @@ seagrass.brm6 |>
 
 ### Fit the model 
 ```{r}
-brm7.form <- bf(Survival ~ scale(log(Time)) + scale(difference_species) + scale(av_species) + scale(mtwa_species) + (1|Study),
+brm7.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) + scale(av_species) + scale(mtwa_species) + (1|Study),
                    family = zero_one_inflated_beta())
 
 get_prior(brm7.form, data = seagrass)
@@ -843,7 +847,7 @@ seagrass.brm7p <- brm(brm7.form, prior = priors7, data = seagrass,
                  warmup = 1000, 
                  chains = 3, cores = 3, 
                  thin = 5, 
-                 control = list(adapt_delta = 0.99, max_treedepth = 20),
+                 control = list(adapt_delta = 0.99, max_treedepth = 50),
                  refresh = 100, 
                  backend = 'rstan') 
 ```
@@ -918,7 +922,7 @@ seagrass.brm7 |>
 
 ### Fit the model 
 ```{r}
-brm8.form <- bf(Survival ~ scale(log(Time)) + scale(Temperature) + Type + (1|Study),
+brm8.form <- bf(Survival ~ scale(log(Time)) * scale(Temperature) + Type + (1|Study),
                    family = zero_one_inflated_beta())
 
 get_prior(brm8.form, data = seagrass)
@@ -984,9 +988,10 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 ```
+
 ### Save model
 ```{r}
-#| label: M6SaveModel
+#| label: M8SaveModel
 
 save(seagrass.brm8, seagrass, priors8, brm8.form, file = '../data/modelled/Model8Beta.RData')
 ```
@@ -1021,16 +1026,3 @@ loo::loo_compare(rstan::loo(seagrass.brm6),
                  rstan::loo(seagrass.brm8))
 ```
 
-# Supplementary materials
-
-
-
-## Summary of available data
-
-
-# Session Info
-
-```{r}
-#| label: sessionInfo
-sessionInfo()
-```

@@ -1,5 +1,5 @@
 ---
-title: "Seagrass Thermal Tolerance - model investigation"
+title: "Seagrass Thermal Tolerance"
 author: "Martina Burgo"
 date: today
 date-format: "DD/MM/YYYY"
@@ -83,26 +83,78 @@ source('../R/functions.R')
 
 ## Read in the data
 ```{r}
-#| label: loadData
+#| label: loadModels
+#| eval: false
 
 load(file = '../data/modelled/Model6Beta.RData')
 load(file = '../data/modelled/Model7Beta.RData')
 load(file = '../data/modelled/Model8Beta.RData')
+seagrass <- read.csv(file = '../data/processed/seagrass_subset.csv')[, -1]
 ```
+
+
+## Methods
+
+Experimental data on seagrass heat-stress response at varying temperatures and durations was collected from published peer-reviewed papers. The literature search was conducted on Google Scholar using the key words 'seagrass' and 'upper thermal limit', 'mortality', 'heat stress', 'upper lethal temperature', 'thermal range', 'thermal window', 'heat tolerance', and 'thermal maximum'. To ensure that no relevant publication was missed, the search was performed continuously between October 2019 and October 2020. Reference lists were also checked. Studies were selected for inclusion in the analysis according to specific methodological criteria. Individuals were
+
+1.  collected from the wild
+
+2.  allowed to acclimatise to laboratory conditions at their average in-situ temperatures (24 hours to 5 months)
+
+3.  exposed to constant treatment temperatures (`r min(seagrass$Temperature)` ºC -- `r ax(seagrass$Temperature)` C)
+
+4.  for a period of time (1 hour -- 112 days) that varied depending on the study.
+
+5.  Following heat stress, survival was recorded as the proportion of the experimental seagrass bed still alive (e.g., 1 = complete survival, 0.5 = 50% survival, 0 = complete mortality)
+
+6.  recovery period at their in-situ temperature (\<24 hours -- 42 days).
+
+Previous studies have measured seagrass response using varying physiological parameters, including photosynthetic efficiency, mortality, shoot density, leaf elongation, necrotic tissue. For this study, only mortality, necrotic tissue, and shoot density were accepted as they directly result in reduced seagrass coverage with consequences for ecosystem services [@thomson2014][@kendrick2019].
+
+# Exploratory analysis
+
+Visual representation of the data:
+
+```{r}
+seagrass |> 
+  ggplot(aes(x = log(Time), y = Temperature, color = Survival)) +
+  geom_point(size = 3) + scale_x_continuous('Time (log)') + 
+  scale_color_viridis_c(option = 'C') + theme_classic()
+```
+
+```{r}
+seagrass |>
+  ggplot(aes(y = Survival, x = difference_species, color = av_species)) +
+  geom_point(size = 3) + theme_classic() + scale_x_continuous('Temp difference (T-MAT)')
+```
+
+And plotting the potential predictors to check if they're correlated:
+
+::: panel-tableset
+## Scatterplot
+
+```{r}
+#| label: scatterPlot
+scatterplotMatrix(~Survival+log(Time)+Temperature+mat_population+av_population+mtwa_population+difference_population + av_species + mat_species + mtwa_species + difference_species, data = seagrass,diagonal = list(method = 'boxplot'))
+```
+
+## Correlation plot
+
+```{r}
+#| label: corrPlot
+seagrass |> 
+  dplyr::select(Time, Temperature, mat_population, av_population, mtwa_population, difference_population, av_species, mat_species, mtwa_species, difference_species) |> 
+  cor() |> 
+  corrplot()
+```
+:::
 
 # Results
-
-## Compare models
-```{r}
-loo::loo_compare(rstan::loo(seagrass.brm6),
-                 rstan::loo(seagrass.brm7),
-                 rstan::loo(seagrass.brm8))
-```
-
 
 ## Basic model
 
 ### Effect sizes
+
 ```{r}
 seagrass.brm8 |>
   as_draws_df() |>
@@ -118,8 +170,9 @@ seagrass.brm8 |>
 1.05/(1+1.05)
 #the intercept is relative to the average of all other predictors
 ```
+
 ```{r}
-100*(0.68-1) #for each unit increase of time, the rate of survival declines by 32% 
+100*(0.71-1) #for each unit increase of time, the rate of survival declines by 29% 
 ```
 
 ```{r}
@@ -127,21 +180,26 @@ seagrass.brm8 |>
 ```
 
 ```{r}
+100*(1.44-1) #on average, Tropical survival is 44% higher
+```
+
+```{r}
 #| fig-width: 31.49
 #| fig-height: 19.68
 
-seagrass.brm8 |> gather_draws(`^b_.*`, regex = TRUE) |>
-  filter(.variable != 'b_Intercept') |>
+seagrass.brm8 |> 
+  gather_draws(`^b_.*`, regex = TRUE) |>
+  filter(.variable != 'b_Intercept') |> 
   ggplot() +
-  geom_density_ridges_gradient(aes(x = exp(.value),
+  geom_density_ridges_gradient(aes(x = .value,
                                    y = .variable,
                                    fill = stat(x)),
                                alpha = 0.4, colour = 'white',
                                quantile_lines = TRUE,
                                quantiles = c(0.025, 0.975)) +
   geom_vline(xintercept = 1, linetype = 'dashed') +
-  scale_x_continuous(trans = scales::log2_trans(), name = '') +
-  scale_y_discrete(name = '', labels = c('Time', 'Temperature', 'Type')) +
+  scale_x_continuous(name = '') +
+  scale_y_discrete(name = '', labels = c('Time*', 'Time:Temperature', 'Temperature*', 'Type')) +
   scale_fill_viridis_c(option = 'D') + theme_classic() +
   theme(text = element_text(colour = 'black'), 
         legend.position = 'none', 
@@ -149,6 +207,7 @@ seagrass.brm8 |> gather_draws(`^b_.*`, regex = TRUE) |>
 ```
 
 ### Survival ~ Temp + Time
+
 ```{r}
 newdata <- with(seagrass,
                 list(Temperature = seq(from = 1,
@@ -178,15 +237,16 @@ fit |>
                      labels = c((seq(24, 336, len = 14)/24))) + #adjusts the labels to show days instead of hours
   scale_y_continuous(expression("Temp difference ("*~degree*C*")"),
                      n.breaks = 10) +
-  scale_fill_viridis_c(option = 'C', name = '') + theme_classic() +
+  scale_fill_viridis_c(option = 'C', name = 'Survival') + theme_classic() +
   theme(text = element_text(colour = 'black'), 
         axis.text = element_text(size = rel(1.2)),
         axis.title = element_text(size = rel(1.5)))
 ```
 
-## Population-level model
+## M6:Population-level model
 
 ### Effect sizes
+
 ```{r}
 seagrass.brm6 |>
   as_draws_df() |>
@@ -199,21 +259,26 @@ seagrass.brm6 |>
 ```
 
 ```{r}
-1.19/(1+1.19)
+1.2/(1+1.2)
 #the intercept is relative to the average of all other predictors
 ```
+
 ```{r}
-100*(0.66-1) #for each unit increase of time, the rate of survival declines by 34% 
+100*(0.69-1) #for each unit increase of time, the rate of survival declines by 31% 
 ```
+
 ```{r}
-100*(0.49-1) #for each unit increase of diff_pop, the rate of survival declines by 51% 
+100*(0.56-1) #for each unit increase of diff_pop, the rate of survival declines by 44% 
 ```
+
 ```{r}
-100*(1.32-1) #for each unit increase of av_pop, the rate of survival increase by 32%
+100*(1.33-1) #for each unit increase of av_pop, the rate of survival increase by 33%
 ```
+
 ```{r}
-100*(0.69-1) #for each unit increase of mtwa_pop, the rate of survival declines by 31% 
+100*(0.71-1) #for each unit increase of mtwa_pop, the rate of survival declines by 29% 
 ```
+
 ```{r}
 #| fig-width: 31.49
 #| fig-height: 19.68
@@ -221,22 +286,23 @@ seagrass.brm6 |>
 seagrass.brm6 |> gather_draws(`^b_.*`, regex = TRUE) |>
   filter(.variable != 'b_Intercept') |>
   ggplot() +
-  geom_density_ridges_gradient(aes(x = exp(.value),
+  geom_density_ridges_gradient(aes(x = .value,
                                    y = .variable,
                                    fill = stat(x)),
                                alpha = 0.4, colour = 'white',
                                quantile_lines = TRUE,
                                quantiles = c(0.025, 0.975)) +
   geom_vline(xintercept = 1, linetype = 'dashed') +
-  scale_x_continuous(trans = scales::log2_trans(), name = '') +
-  scale_y_discrete(name = '', labels = c('AV', 'Diff', 'Time', 'Time*Diff', 'MTWA')) +
+  scale_x_continuous(name = '') +
+  scale_y_discrete(name = '', labels = c('AV*', 'Difference*', 'Time*', 'Time:Difference', 'MTWA*')) +
   scale_fill_viridis_c(option = 'D') + theme_classic() +
   theme(text = element_text(colour = 'black'), 
         legend.position = 'none', 
         axis.text = element_text(size = rel(1.5)))
 ```
 
-### Survival ~ Diff + AV
+### Survival \~ Diff + AV
+
 ```{r}
 newdata2 <- with(seagrass,
                 list(difference_population = seq(from = 1,
@@ -278,6 +344,7 @@ fit2 |>
 ```
 
 At what range of temperature difference does higher AV results in survival increase of at least 25%?
+
 ```{r}
 seagrass.brm6 |> 
   emmeans(~difference_population|av_population, at = newdata2, type = 'response') |> 
@@ -293,6 +360,7 @@ seagrass.brm6 |>
 ```
 
 At what temp difference is the survival improvement highest between AV?
+
 ```{r}
 seagrass.brm6 |> 
   emmeans(~difference_population|av_population, at = newdata2, type = 'response') |> 
@@ -310,6 +378,7 @@ seagrass.brm6 |>
 ```
 
 ### Survival ~ Diff + MTWA
+
 ```{r}
 newdata3 <- with(seagrass,
                 list(difference_population = seq(from = 1,
@@ -350,9 +419,10 @@ fit3 |>
         legend.title = element_text(size = rel(1.5)))
 ```
 
-
 ### LD50
+
 For Temp diff
+
 ```{r}
 seagrass.brm6 |> 
   emmeans(~difference_population, 
@@ -371,6 +441,7 @@ seagrass.brm6 |>
 ```
 
 For Time (in hours) at three temp diff
+
 ```{r}
 seagrass.brm6 |> 
   emmeans(~Time|difference_population, 
@@ -390,9 +461,10 @@ seagrass.brm6 |>
             Pg = mean(Time > 1))
 ```
 
-## Species-level model
+## M7: Species-level model
 
 ### Effect sizes
+
 ```{r}
 seagrass.brm7 |>
   as_draws_df() |>
@@ -405,19 +477,22 @@ seagrass.brm7 |>
 ```
 
 ```{r}
-1.17/(1+1.17)
+1.17/(1+1.16)
 #the intercept is relative to the average of all other predictors
 ```
+
 ```{r}
-100*(0.7-1) #for each unit increase of time, the rate of survival declines by 30% 
+100*(0.78-1) #for each unit increase of time, the rate of survival declines by 22% 
 ```
+
 ```{r}
-100*(0.46-1) #for each unit increase of diff_spp, the rate of survival declines by 55% 
+100*(0.59-1) #for each unit increase of diff_spp, the rate of survival declines by 41% 
 ```
 
 ```{r}
 100*(0.7-1) #for each unit increase of mtwa_spp, the rate of survival declines by 30% 
 ```
+
 ```{r}
 #| fig-width: 31.49
 #| fig-height: 19.68
@@ -425,15 +500,15 @@ seagrass.brm7 |>
 seagrass.brm7 |> gather_draws(`^b_.*`, regex = TRUE) |>
   filter(.variable != 'b_Intercept') |>
   ggplot() +
-  geom_density_ridges_gradient(aes(x = exp(.value),
+  geom_density_ridges_gradient(aes(x = .value,
                                    y = .variable,
                                    fill = stat(x)),
                                alpha = 0.4, colour = 'white',
                                quantile_lines = TRUE,
                                quantiles = c(0.025, 0.975)) +
   geom_vline(xintercept = 1, linetype = 'dashed') +
-  scale_x_continuous(trans = scales::log2_trans(), name = '') +
-  scale_y_discrete(name = '', labels = c('AV', 'Diff', 'Time', 'Time*Diff', 'MTWA')) +
+  scale_x_continuous(name = '') +
+  scale_y_discrete(name = '', labels = c('AV', 'Difference*', 'Time*', 'Time:Diff', 'MTWA*')) +
   scale_fill_viridis_c(option = 'D') + theme_classic() +
   theme(text = element_text(colour = 'black'), 
         legend.position = 'none', 
@@ -441,6 +516,7 @@ seagrass.brm7 |> gather_draws(`^b_.*`, regex = TRUE) |>
 ```
 
 ### Survival ~ Diff + MTWA
+
 ```{r}
 newdata4 <- with(seagrass,
                 list(difference_species = seq(from = 1,
@@ -481,9 +557,10 @@ fit4 |>
         legend.title = element_text(size = rel(1.5)))
 ```
 
-
 ### LD50
+
 For Temp diff
+
 ```{r}
 seagrass.brm7 |> 
   emmeans(~difference_species, 
@@ -502,6 +579,7 @@ seagrass.brm7 |>
 ```
 
 For Time (in hours) at three temp diff
+
 ```{r}
 seagrass.brm7 |> 
   emmeans(~Time|difference_species, 
@@ -519,4 +597,23 @@ seagrass.brm7 |>
   summarise(median_hdci(Time),
             Pl = mean(Time < 1),
             Pg = mean(Time > 1))
+```
+
+# Compare models
+
+```{r}
+loo::loo_compare(rstan::loo(seagrass.brm6),
+                 rstan::loo(seagrass.brm7))
+```
+
+# Identify vulnerable communities
+
+
+# Supplementary materials
+
+# Session Info
+
+```{r}
+#| label: sessionInfo
+sessionInfo()
 ```
