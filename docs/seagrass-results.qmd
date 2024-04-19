@@ -53,6 +53,23 @@ knitr::opts_chunk$set(cache.lazy = FALSE,
 options(tinytex.engine = "xelatex")
 ```
 
+# Intro
+
+This dataset contains the data gathered from the systematic search and the climate variables calculated as summarised
+
+## Climate variables
+
+Data on mean monthly sea surface temperatures for the analysis was downloaded from the National Oceanic and Atmospheric Administration (https://psl.noaa.gov/data/gridded/data.cobe2.html). The variable used is 'sst.mon.mean.nc'. To investigate how seagrass thermal tolerance varies between species and populations, the following variables were created for each seagrass population:
+
+| Variable                                    | At population-level                       | At species-level                                                  |
+|---------------------|--------------------|-------------------------------|
+| MAT (mean annual temperature)               | Average MAT across years for one location | Average MAT across years averaged across the species distribution |
+| AV (annual variation)                       | Average AV across years for one location  | Max AV across years averaged across the species distribution      |
+| MTWA (maximum temperature of warmest moth)  | Max MTWA across years for one location    | Max MTWA across years averaged across the species distribution    |
+| Difference (Experimental temperature - MAT) |                                           |                                                                   |
+| Magnitude (Difference/AV)                   |                                           |                                                                   |
+
+
 # Preparations
 
 ## Load the necessary libraries
@@ -92,24 +109,6 @@ load(file = '../data/modelled/Model8Beta.RData')
 seagrass <- read.csv(file = '../data/processed/seagrass_subset.csv')[, -1]
 ```
 
-
-## Methods
-
-Experimental data on seagrass heat-stress response at varying temperatures and durations was collected from published peer-reviewed papers. The literature search was conducted on Google Scholar using the key words 'seagrass' and 'upper thermal limit', 'mortality', 'heat stress', 'upper lethal temperature', 'thermal range', 'thermal window', 'heat tolerance', and 'thermal maximum'. To ensure that no relevant publication was missed, the search was performed continuously between October 2019 and October 2020. Reference lists were also checked. Studies were selected for inclusion in the analysis according to specific methodological criteria. Individuals were
-
-1.  collected from the wild
-
-2.  allowed to acclimatise to laboratory conditions at their average in-situ temperatures (24 hours to 5 months)
-
-3.  exposed to constant treatment temperatures (`r min(seagrass$Temperature)` ºC -- `r ax(seagrass$Temperature)` C)
-
-4.  for a period of time (1 hour -- 112 days) that varied depending on the study.
-
-5.  Following heat stress, survival was recorded as the proportion of the experimental seagrass bed still alive (e.g., 1 = complete survival, 0.5 = 50% survival, 0 = complete mortality)
-
-6.  recovery period at their in-situ temperature (\<24 hours -- 42 days).
-
-Previous studies have measured seagrass response using varying physiological parameters, including photosynthetic efficiency, mortality, shoot density, leaf elongation, necrotic tissue. For this study, only mortality, necrotic tissue, and shoot density were accepted as they directly result in reduced seagrass coverage with consequences for ecosystem services [@thomson2014][@kendrick2019].
 
 # Exploratory analysis
 
@@ -151,7 +150,7 @@ seagrass |>
 
 # Results
 
-## Basic model
+## M8: Basic model
 
 ### Effect sizes
 
