@@ -12,7 +12,6 @@ library(ncdf4)
 library(sf)
 library(sp)
 library(IDPmisc)
-#library(maptools)
 
 
 ## FUNCTIONS ----

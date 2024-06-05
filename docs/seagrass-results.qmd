@@ -110,6 +110,8 @@ load(file = '../data/modelled/Model8Beta.RData')
 
 pred_1w_stack <- raster::stack('../data/processed/pred_1w_stack.grd')
 pred_2w_stack <- raster::stack('../data/processed/pred_2w_stack.grd')
+
+seagrass <- read_csv('../data/processed/data_calculatedv2.csv', trim_ws = TRUE)[, -1]
 ```
 
 
@@ -607,8 +609,21 @@ seagrass.brm7 |>
 loo::loo_compare(rstan::loo(seagrass.brm6),
                  rstan::loo(seagrass.brm7))
 ```
+## Mixed model
+### Effect sizes
 
-# Identify vulnerable communities
+```{r}
+seagrass.brm9 |>
+  as_draws_df() |>
+  mutate(across(everything(), exp)) |> #to go from log scale to odds ratio
+  dplyr::select(matches("^b_.*|^sd_.*")) |> 
+  summarise_draws(median, HDInterval::hdi, rhat, length, ess_bulk, ess_tail,
+                  Pl = ~ mean(.x < 1),
+                  Pg = ~ mean(.x > 1)) |>
+  as_tibble()
+```
+
+## Identify vulnerable communities
 
 ```{r}
 as.data.frame(table(as.matrix(pred_1w_stack[[1]]))) |>

@@ -560,3 +560,77 @@ seagrass.brm8 |>
 loo::loo_compare(rstan::loo(seagrass.brm6),
                  rstan::loo(seagrass.brm7),
                  rstan::loo(seagrass.brm8))
+
+
+## Model 9: mixed model (pop + spp) ----
+
+### Fit the model ----
+brm9.form <- bf(Survival ~ scale(log(Time)) + scale(difference_species) + scale(av_population) + scale(mtwa_population) + Type + (1|Study),
+                family = zero_one_inflated_beta())
+
+get_prior(brm9.form, data = seagrass)
+
+seagrass |> 
+  group_by(Type) |>
+  summarise(logit(median(Survival)),
+            logit(mad(Survival)))
+
+priors9 <- prior(normal(-4, 4), class = 'Intercept') +
+  prior(normal(0, 5), class = 'b') + 
+  prior(student_t(3, 0,5), class = 'sd')  +
+  prior(gamma(0.01, 0.01), class = 'phi') +
+  prior(beta(1, 1), class = 'zoi') +
+  prior(beta(1, 1), class = 'coi')
+
+seagrass.brm9p <- brm(brm9.form, prior = priors9, data = seagrass, 
+                      sample_prior = 'only', 
+                      iter = 5000, 
+                      warmup = 1000, 
+                      chains = 3, cores = 3, 
+                      thin = 5, 
+                      control = list(adapt_delta = 0.99, max_treedepth = 20),
+                      refresh = 100, 
+                      backend = 'rstan') 
+
+
+seagrass.brm9p |> conditional_effects() |> plot(points = TRUE, ask = FALSE)
+
+seagrass.brm9 <- update(seagrass.brm9p, sample_prior = 'yes')
+
+seagrass.brm9 |> SUYR_prior_and_posterior()
+
+
+### Diagnostics ----
+seagrass.brm9$fit |> stan_trace()
+seagrass.brm9$fit |> stan_ac()
+seagrass.brm9$fit |> stan_rhat()
+seagrass.brm9$fit |> stan_ess()
+
+seagrass.brm9 |> pp_check(type = 'dens_overlay', ndraws = 100)
+
+seagrass.resids <- make_brms_dharma_res(seagrass.brm9, integerResponse = FALSE)
+wrap_elements(~testUniformity(seagrass.resids)) +
+  wrap_elements(~plotResiduals(seagrass.resids, form = factor(rep(1, nrow(seagrass))))) + 
+  wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
+  wrap_elements(~testDispersion(seagrass.resids)) 
+
+save(seagrass.brm9, seagrass, priors9, brm9.form, file = 'data/modelled/Model9Beta.RData')
+
+### Model investigation ----
+seagrass.brm9 |> 
+  conditional_effects(spaghetti = TRUE, ndraws = 100) |>
+  plot(points = TRUE, ask = FALSE)
+
+seagrass.brm9 |>
+  as_draws_df() |>
+  mutate(across(everything(), exp)) |> #to go from log scale to odds ratio
+  summarise_draws(median, HDInterval::hdi, rhat, length, ess_bulk, ess_tail,
+                  Pl = ~ mean(.x < 1),
+                  Pg = ~ mean(.x > 1)) |>
+  as_tibble() |>
+  dplyr::slice(1:7)
+
+## Compare ----
+loo::loo_compare(rstan::loo(seagrass.brm6),
+                 rstan::loo(seagrass.brm7),
+                 rstan::loo(seagrass.brm9))
