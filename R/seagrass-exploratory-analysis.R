@@ -357,7 +357,7 @@ loo::loo_compare(rstan::loo(seagrass.brm1),
 ## Model 6: effect of local climate on survival ----
 
 ### Fit the model ----
-brm6.form <- bf(Survival ~ scale(log(Time)) * scale(difference_population) + scale(av_population) + scale(mtwa_population) + (1|Study),
+brm6.form <- bf(Survival ~ scale(log(Time)) * scale(difference_population) + scale(av_population) + scale(mtwa_population) + Type + (1|Study),
                 family = zero_one_inflated_beta())
 
 get_prior(brm6.form, data = seagrass)
@@ -403,7 +403,7 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 
-save(seagrass.brm6, seagrass, priors6, brm6.form, file = '../data/modelled/Model6Beta.RData')
+save(seagrass.brm6, seagrass, priors6, brm6.form, file = 'data/modelled/Model6Beta.RData')
 
 ### Model investigation ----
 seagrass.brm6 |> 
@@ -417,14 +417,14 @@ seagrass.brm6 |>
                   Pl = ~ mean(.x < 1),
                   Pg = ~ mean(.x > 1)) |>
   as_tibble() |>
-  dplyr::slice(1:7)
+  dplyr::slice(1:8)
 
 
 
 ## Model 7: effect of species-level climate on survival ----
 
 ### Fit the model ----
-brm7.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) + scale(av_species) + scale(mtwa_species) + (1|Study),
+brm7.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) + scale(av_species) + scale(mtwa_species) + Type + (1|Study),
                 family = zero_one_inflated_beta())
 
 get_prior(brm7.form, data = seagrass)
@@ -470,7 +470,7 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 
-save(seagrass.brm7, seagrass, priors7, brm7.form, file = '../data/modelled/Model7Beta.RData')
+save(seagrass.brm7, seagrass, priors7, brm7.form, file = 'data/modelled/Model7Beta.RData')
 
 ### Model investigation ----
 seagrass.brm7 |> 
@@ -484,7 +484,7 @@ seagrass.brm7 |>
                   Pl = ~ mean(.x < 1),
                   Pg = ~ mean(.x > 1)) |>
   as_tibble() |>
-  dplyr::slice(1:7)
+  dplyr::slice(1:8)
 
 
 ## Model 8: effect of temp and type ----
@@ -539,7 +539,7 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 
-save(seagrass.brm8, seagrass, priors8, brm8.form, file = '../data/modelled/Model8Beta.RData')
+save(seagrass.brm8, seagrass, priors8, brm8.form, file = 'data/modelled/Model8Beta.RData')
 
 ### Model investigation ----
 seagrass.brm8 |> 
@@ -553,7 +553,7 @@ seagrass.brm8 |>
                   Pl = ~ mean(.x < 1),
                   Pg = ~ mean(.x > 1)) |>
   as_tibble() |>
-  dplyr::slice(1:5)
+  dplyr::slice(1:6)
 
 
 ## Compare models ----

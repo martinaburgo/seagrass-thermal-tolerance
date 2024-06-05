@@ -77,7 +77,7 @@ for(i in 1:nlayers(temp)) {
 names(tempFilled) <- names(temp)
 temp <- tempFilled
 
-writeRaster(temp, "data/processed/tempFilled.nc")
+writeRaster(temp, "data/processed/tempFilled.nc", overwrite=TRUE)
 
 #create new rasters to store the climate variables for each year
 mtwa <- mat <-av <- raster(nrow = nrow(temp), ncol = ncol(temp), 
@@ -104,9 +104,9 @@ names(av)<-year
 names(mat)<-year
 names(mtwa)<-year
 
-writeRaster(av, "data/processed/av.nc")
-writeRaster(mat, "data/processed/mat.nc")
-writeRaster(mtwa, "data/processed/mtwa.nc")
+writeRaster(av, "data/processed/av.nc", overwrite=TRUE)
+writeRaster(mat, "data/processed/mat.nc", overwrite=TRUE)
+writeRaster(mtwa, "data/processed/mtwa.nc", overwrite=TRUE)
 
 # EXTRACT POPULATION-LEVEL CLIMATE ----
 temp_df <- cbind(Edata$Longitude, Edata$Latitude) %>% #put coordinates together
@@ -160,7 +160,8 @@ Edata$magnitude_population <- Edata$difference_population/Edata$av_population
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-##CALCULATING SPECIES-LEVEL CLIMATE ---- only do this once for each combination of species and experiment year
+# CALCULATING SPECIES-LEVEL CLIMATE ---- 
+#only do this once for each combination of species and experiment year
 EdataUn <- data.frame(Genus=Edata$Genus,Species=Edata$Species,Date=Edata$Date)
 EdataUn$Date[which(is.na(Edata$Date))] <- Edata$Publication[which(is.na(Edata$Date))]
 EdataUn <- unique(EdataUn)
@@ -205,7 +206,7 @@ for(ii in 1:length(focalSpecies)){
     mtwa_species <- max(na.omit(mtwa_species)) # maximum of the maximum monthly temperatures across years for each site 
     
     EdataUn$mat_species[focalRow[i]] <- mean(NaRV.omit(values(mat_species))) # mean across sites of the maximum of the mean annual temperatures across years
-    EdataUn$mtwa_species[focalRow[i]] <- mean(NaRV.omit(values(mtwa_species)))
+    EdataUn$mtwa_species[focalRow[i]] <- max(NaRV.omit(values(mtwa_species)))
    
     print(focalRow[i])
     write.csv(EdataUn, 'data/processed/data_calculated_Unique.csv')

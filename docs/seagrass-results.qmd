@@ -94,6 +94,7 @@ library(DHARMa)     #for residual diagnostics
 library(rstan)      #for interfacing with STAN
 library(emmeans)
 library(ggridges)   #for ridge plots 
+library(raster)
 
 source('../R/functions.R')
 ```
@@ -106,7 +107,9 @@ source('../R/functions.R')
 load(file = '../data/modelled/Model6Beta.RData')
 load(file = '../data/modelled/Model7Beta.RData')
 load(file = '../data/modelled/Model8Beta.RData')
-seagrass <- read.csv(file = '../data/processed/seagrass_subset.csv')[, -1]
+
+pred_1w_stack <- raster::stack('../data/processed/pred_1w_stack.grd')
+pred_2w_stack <- raster::stack('../data/processed/pred_2w_stack.grd')
 ```
 
 
@@ -300,7 +303,7 @@ seagrass.brm6 |> gather_draws(`^b_.*`, regex = TRUE) |>
         axis.text = element_text(size = rel(1.5)))
 ```
 
-### Survival \~ Diff + AV
+### Survival ~ Diff + AV
 
 ```{r}
 newdata2 <- with(seagrass,
@@ -607,6 +610,11 @@ loo::loo_compare(rstan::loo(seagrass.brm6),
 
 # Identify vulnerable communities
 
+```{r}
+as.data.frame(table(as.matrix(pred_1w_stack[[1]]))) |>
+  mutate(Percent = Freq/sum(Freq) * 100) |>
+  head()
+```
 
 # Supplementary materials
 
