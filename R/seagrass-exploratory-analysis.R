@@ -357,7 +357,7 @@ loo::loo_compare(rstan::loo(seagrass.brm1),
 ## Model 6: effect of local climate on survival ----
 
 ### Fit the model ----
-brm6.form <- bf(Survival ~ scale(log(Time)) * scale(difference_population) + scale(av_population) + scale(mtwa_population) + Type + (1|Study),
+brm6.form <- bf(Survival ~ scale(log(Time)) * scale(difference_population) + scale(av_population) + scale(mtwa_population) + Type + (1|Study) + (1|Species),
                 family = zero_one_inflated_beta())
 
 get_prior(brm6.form, data = seagrass)
@@ -368,7 +368,7 @@ seagrass |>
 
 priors6 <- prior(normal(-2, 2), class = 'Intercept') +
   prior(normal(0, 5), class = 'b') + 
-  prior(student_t(3, 0,5), class = 'sd')  +
+  prior(student_t(3, 0, 5), class = 'sd')  +
   prior(gamma(0.01, 0.01), class = 'phi') +
   prior(beta(1, 1), class = 'zoi') +
   prior(beta(1, 1), class = 'coi')
@@ -403,7 +403,7 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 
-save(seagrass.brm6, seagrass, priors6, brm6.form, file = 'data/modelled/Model6Beta.RData')
+#save(seagrass.brm6, seagrass, priors6, brm6.form, file = 'data/modelled/Model6Beta.RData')
 
 ### Model investigation ----
 seagrass.brm6 |> 
@@ -424,7 +424,7 @@ seagrass.brm6 |>
 ## Model 7: effect of species-level climate on survival ----
 
 ### Fit the model ----
-brm7.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) + scale(av_species) + scale(mtwa_species) + Type + (1|Study),
+brm7.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) + scale(av_species) + scale(mtwa_species) + Type + (1|Study) + (1|Species),
                 family = zero_one_inflated_beta())
 
 get_prior(brm7.form, data = seagrass)
@@ -470,7 +470,7 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 
-save(seagrass.brm7, seagrass, priors7, brm7.form, file = 'data/modelled/Model7Beta.RData')
+#save(seagrass.brm7, seagrass, priors7, brm7.form, file = 'data/modelled/Model7Beta.RData')
 
 ### Model investigation ----
 seagrass.brm7 |> 
@@ -490,7 +490,7 @@ seagrass.brm7 |>
 ## Model 8: effect of temp and type ----
 
 ### Fit the model ----
-brm8.form <- bf(Survival ~ scale(log(Time)) * scale(Temperature) + Type + (1|Study),
+brm8.form <- bf(Survival ~ scale(log(Time)) * scale(Temperature) + Type + (1|Study) + (1|Species),
                 family = zero_one_inflated_beta())
 
 get_prior(brm8.form, data = seagrass)
@@ -539,7 +539,7 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 
-save(seagrass.brm8, seagrass, priors8, brm8.form, file = 'data/modelled/Model8Beta.RData')
+#save(seagrass.brm8, seagrass, priors8, brm8.form, file = 'data/modelled/Model8Beta.RData')
 
 ### Model investigation ----
 seagrass.brm8 |> 
@@ -565,7 +565,7 @@ loo::loo_compare(rstan::loo(seagrass.brm6),
 ## Model 9: mixed model (pop + spp) ----
 
 ### Fit the model ----
-brm9.form <- bf(Survival ~ scale(log(Time)) + scale(difference_species) + scale(av_population) + scale(mtwa_population) + Type + (1|Study),
+brm9.form <- bf(Survival ~ scale(log(Time)) + scale(difference_species) + scale(av_population) + scale(mtwa_population) + Type + (1|Study) + (1|Species),
                 family = zero_one_inflated_beta())
 
 get_prior(brm9.form, data = seagrass)
@@ -614,7 +614,7 @@ wrap_elements(~testUniformity(seagrass.resids)) +
   wrap_elements(~plotResiduals(seagrass.resids, quantreg = TRUE)) + 
   wrap_elements(~testDispersion(seagrass.resids)) 
 
-save(seagrass.brm9, seagrass, priors9, brm9.form, file = 'data/modelled/Model9Beta.RData')
+#save(seagrass.brm9, seagrass, priors9, brm9.form, file = 'data/modelled/Model9Beta.RData')
 
 ### Model investigation ----
 seagrass.brm9 |> 

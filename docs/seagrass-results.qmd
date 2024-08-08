@@ -107,6 +107,7 @@ source('../R/functions.R')
 load(file = '../data/modelled/Model6Beta.RData')
 load(file = '../data/modelled/Model7Beta.RData')
 load(file = '../data/modelled/Model8Beta.RData')
+load(file = '../data/modelled/Model9Beta.RData')
 
 pred_1w_stack <- raster::stack('../data/processed/pred_1w_stack.grd')
 pred_2w_stack <- raster::stack('../data/processed/pred_2w_stack.grd')
@@ -609,8 +610,8 @@ seagrass.brm7 |>
 loo::loo_compare(rstan::loo(seagrass.brm6),
                  rstan::loo(seagrass.brm7))
 ```
-## Mixed model
-### Effect sizes
+# Mixed model
+## Effect sizes
 
 ```{r}
 seagrass.brm9 |>
@@ -623,13 +624,13 @@ seagrass.brm9 |>
   as_tibble()
 ```
 
-## Identify vulnerable communities
+# Identify vulnerable communities
 
 ```{r}
-as.data.frame(table(as.matrix(pred_1w_stack[[1]]))) |>
-  mutate(Percent = Freq/sum(Freq) * 100) |>
-  head()
+pred_1w_stack[[1:3]] |> plot()
+pred_2w_stack[[1:3]] |> plot()
 ```
+
 
 # Supplementary materials
 
