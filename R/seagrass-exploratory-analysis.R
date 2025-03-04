@@ -40,9 +40,8 @@ seagrass |>
 #lower than MAT will be excluded.Some studies exposed seagrasses to hight heat stress for very short periods of time (< 1 hour) and these studies 
 #were excluded as they do not represent realistic in-situ conditions.
 seagrass <- seagrass |> 
-  filter(Temperature >= mat_population) |>
-  filter(Time >= 1)
-write.csv(seagrass, file = 'data/processed/seagrass_subset.csv') #saving the subset data used for analysis
+  filter(Temperature >= mat_population)
+#write.csv(seagrass, file = 'data/processed/seagrass_subset.csv') #saving the subset data used for analysis
 
 seagrass |> ggplot(aes(x = log10(Time), y = Temperature, color = Survival)) +
   geom_point(size = 3) + scale_x_continuous('Time (log10)') + 
@@ -67,7 +66,7 @@ seagrass |> dplyr::select(Time, Temperature, mat_population, av_population, mtwa
 
 #1.  Binomial distribution: binning survival in either 1 (survival \> 0.5) or 0 (survival \<= 0)
 
-#  Using a beta distribution (zero and one inflated)
+#2.  Using a beta distribution (zero and one inflated) to avoid binning the data (preferred)
 
 
 # BINOMIAL DISTRIBUTION ----
@@ -387,7 +386,8 @@ seagrass.brm6p |> conditional_effects() |> plot(points = TRUE, ask = FALSE)
 
 seagrass.brm6 <- update(seagrass.brm6p, sample_prior = 'yes') # add data
 
-seagrass.brm6 |> SUYR_prior_and_posterior()
+seagrass.brm6 |> 
+  SUYR_prior_and_posterior()
 
 ### Diagnostics ----
 seagrass.brm6$fit |> stan_trace()
@@ -419,7 +419,13 @@ seagrass.brm6 |>
   as_tibble() |>
   dplyr::slice(1:8)
 
-
+seagrass.brm6 |> 
+  emmeans(~difference_population|av_population, at = list(difference_population = seq(min(seagrass$difference_population),
+                                                                                      max(seagrass$difference_population),
+                                                                                      length.out = 50),
+                                                          av_population = c(5, 15))) |>
+  gather_emmeans_draws() |>
+  summarise(median_hdci(.value))
 
 ## Model 7: effect of species-level climate on survival ----
 
@@ -486,6 +492,33 @@ seagrass.brm7 |>
   as_tibble() |>
   dplyr::slice(1:8)
 
+seagrass.brm7 |> 
+  emmeans(~Time|difference_species, type = 'response', 
+          at = list(Time = seq(min(seagrass$Time), max(seagrass$Time), length.out = 50),
+                    difference_species = seq(min(seagrass$difference_species), 
+                                             max(seagrass$difference_species), length.out = 50))) |> 
+  as.tibble()
+
+seagrass.brm7 |> 
+  emmeans(~difference_species|Time, at = list(Time = seq(min(seagrass$Time), 
+                                                         max(seagrass$Time), 
+                                                         length.out = 50),
+                                              difference_species = c(2, 5, 10, 15, 20, 25, 30))) |>
+  gather_emmeans_draws() |>
+  summarise(median_hdci(.value),
+            Pg = mean(.value > 0.5))
+
+seagrass.brm7 |> 
+  emmeans(~difference_species|Time, at = list(Time = c(7*24, 24*24, 28*24),
+                                              difference_species = 5)) |>
+  gather_emmeans_draws() |>
+  summarise(median_hdci(.value),
+            Pg = mean(.value > 0.5))
+
+
+# Compare models ----
+loo::loo_compare(rstan::loo(seagrass.brm6),
+                 rstan::loo(seagrass.brm7))
 
 ## Model 8: effect of temp and type ----
 
@@ -554,12 +587,6 @@ seagrass.brm8 |>
                   Pg = ~ mean(.x > 1)) |>
   as_tibble() |>
   dplyr::slice(1:6)
-
-
-## Compare models ----
-loo::loo_compare(rstan::loo(seagrass.brm6),
-                 rstan::loo(seagrass.brm7),
-                 rstan::loo(seagrass.brm8))
 
 
 ## Model 9: mixed model (pop + spp) ----

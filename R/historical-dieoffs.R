@@ -18,7 +18,7 @@ dieoffs <- dieoffs |>
   mutate(partial_survival = NA)
 
 for (i in 1:nrow(dieoffs)) {
-  dieoffs[i, 'partial_survival'] <-seagrass.brm9 |> 
+  dieoffs[i, 'partial_survival'] <- seagrass.brm9 |> 
     emmeans(~ Time|difference_species|av_population|mtwa_population|Type, 
             at = with(dieoffs[i,],
                       list(Time = Time,
@@ -51,5 +51,5 @@ dieoffs_final |>
   geom_abline() + xlim(0, 1) + ylim(0, 1) +
   theme_bw() + theme(panel.grid.major = element_blank(),
                      panel.grid.minor = element_blank(),
-                     text=element_text(size=24,  family="Helvetica")) +
+                     text=element_text(size=12,  family="Helvetica")) +
   xlab("Observed survial") + ylab("Predicted survival")

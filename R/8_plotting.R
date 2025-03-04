@@ -1,13 +1,15 @@
-## READ ME ----
+# READ ME ----
 #This file provides to code used for each plot in the manuscript and supplementary information 
 
-###LOAD PACKAGES ----
+# Set up ----
+## Packages ----
 library(ncdf4)
 library(raster)
 library(sp)
 library(maptools)
 library(scales)
 library(lme4)
+library(ggplot2)
 library(gridExtra)
 library(maps)
 library(ggExtra)
@@ -16,10 +18,15 @@ library(viridis)
 library(tidyverse)
 library(IDPmisc)
 
-###LOAD DATA ----
-data <- read.csv('clean_data/data_calculated.csv') %>%
-  dplyr::select(!(X))
-heatwaves <- read.csv('clean_data/heatwaves_calculated.csv') %>%
+## Data ----
+data <- read.csv('data/processed/data_calculatedv2.csv') |> 
+  dplyr::select(!(X)) |> 
+  dplyr::filter(Temperature >= mat_population) |>
+  dplyr::filter(Time >= 1) |> 
+  dplyr::mutate(Bioregion = ifelse(Location == 'Peel-Harvey Estuary, WA', 'Temperate Southern Oceans',
+                                   ifelse(Location == 'Swan River Estuary, Perth, WA', 'Temperate Southern Oceans',
+                                          Bioregion))) #fix bioregions for two studies
+heatwaves <- read.csv('data/processed/heatwaves_calculated.csv') |> 
   dplyr::select(!(X))
 world <- map_data("world") #basemap
 projections_df <- read.csv('projections.csv') %>%
@@ -55,6 +62,8 @@ magnitude <- median(unlist(aggregate(heatwaves$difference_population_mean,
 seagrasses_effort <- raster('seagrasses_effort.tif')
 seagrasses_presence <- raster('seagrasses_presence.tif')
 
+source('R/functions.R')
+
 #getting the studies coords
 data.x <- data$Longitude
 data.y <- data$Latitude
@@ -66,27 +75,16 @@ heat.y <- heatwaves$Latitude
 heat.labs <- data.frame(heat.x,heat.y)
 
 #models
-model0 <- glmer(formula = "survival_adjusted ~ magnitude_population_mean + 
-                magnitude_species_1_mean + LOGtime + (1 | Species) + (1 | Study)", 
-                data = data, family = binomial)
-model1 <- glmer(formula = "survival_adjusted ~ magnitude_population_mean + 
-                magnitude_species_1_mean + Type + LOGtime + (1 | Species) + (1 | Study)", 
-                data = data, family = binomial)
-model2 <- glmer(formula = "survival_adjusted ~ difference_population_mean + 
-                av_population + LOGtime + (1 | Species) + (1 | Study)", 
-                data = data, family = binomial)
-model3 <- glmer(formula = "survival_adjusted ~ difference_species_1_mean + 
-                av_species + LOGtime + (1 | Species) + (1 | Study)", 
-                data = data, family = binomial)
-model4 <- glmer(formula = "survival_adjusted ~ magnitude_population_mean + 
-                magnitude_species_1_mean + mtwa_species_2_max + LOGtime + (1 | Species) + (1 | Study)", 
-                data = data, family = binomial)
+load('data/modelled/Model6Beta.RData')
+load('data/modelled/Model7Beta.RData')
+load('data/modelled/Model8Beta.RData')
+load('data/modelled/Model9Beta.RData')
 
 temp <- raster::stack("raw_data/sst.mon.mean.nc") %>% #load
   .[[((1960-1850)*12+1):nlayers(.)]] %>% #select period 1960 - present
   raster::rotate() #adjust longitude to -180,180
 
-###MAIN----
+# Main figures ----
 ##FIG. 1 - conceptual figure ----
 ji <- function(xy, origin=c(0,0), cellsize=c(4,4)) {
   t(apply(xy, 1, function(z) cellsize/2+origin+cellsize*(floor((z - origin)/cellsize))))
@@ -199,54 +197,57 @@ fig_1a_base +  by(sample_loc_aggregate, sample_loc_aggregate$Cell,
   scale_color_viridis(option = "viridis", breaks = c(5,15,35,50),
                       name = 'Number of \nobservations') + guides(size = F, alpha = F)
 
-##FIG. 2 - survival vs magnitude + survival over temp difference and AV ----
+##FIG. 2 - heatmap (temp and time) + survival over temp difference and AV (population) ----
 #FIG. 2a
-figure_2a <- expand.grid(LOGtime = seq(min(data$LOGtime), 
-                          max(data$LOGtime), 
-                          length.out = 50),
-            magnitude_species_1_mean = seq(1, 
-                                           max(data$magnitude_species_1_mean), 
-                                           length.out = 50),
-            magnitude_population_mean = mean(data$magnitude_population_mean)) %>%
-  mutate(Survival = predict(model0, ., type = 'response', re.form = NA)) %>%
-  ggplot(aes(magnitude_species_1_mean, LOGtime, fill= Survival)) + 
+preds2a <- seagrass.brm7 |> 
+  emmeans(~Time|difference_species, type = 'response', 
+          at = list(Time = seq(min(seagrass$Time), max(seagrass$Time), length.out = 50),
+                    difference_species = seq(min(seagrass$difference_species), 
+                                             max(seagrass$difference_species), length.out = 50))) |> 
+  as.tibble()
+
+figure_2a <- preds2a |> 
+  ggplot(aes(x = Time, y = difference_species, fill = response)) + 
   geom_tile() + theme_bw() + theme(panel.grid.major = element_blank(),
                                    panel.grid.minor = element_blank(),
-                                   text=element_text(size=24,  family="Helvetica"),
-                                   legend.position = c(0.15, 0.22)) +
-  scale_fill_viridis(option = "plasma", name = "Survival") + 
-  ggtitle("Survival over time and magnitude - species level") +
-  xlab("Magnitude of warming") + ylab("Duration (Hours, log scale)") 
+                                   text = element_text(size = 12,  family = "Helvetica"),
+                                   legend.position = c(0.8, 0.75),
+                                   legend.background = element_blank()) +
+  scale_fill_viridis_c(option = "plasma", name = "Survival", direction = -1) +
+  scale_x_continuous(name = 'Duration (days)',
+    breaks = c(7*24, 14*24, 30*24, 60*24, 90*24), # Set the tick positions
+    labels = c(7, 14, 30, 60, 90) # Set the corresponding labels
+  )  +
+  labs(subtitle = 'a') + 
+  #ggtitle("Survival over time and intensity - species level") +
+  ylab("∆MAT (ºC)")
 
 #FIG. 2b
-figure_2b <- data.frame(difference_population_mean = c(rep(seq(0,35),3)),
-                        av_population = c(rep(5, length.out = 36),
-                                          rep(10, length.out = 36),
-                                          rep(15, length.out = 36)),
-                        LOGtime = log(24*14)) %>% #2-week MHW
-  mutate(Survival = predict(model2, ., type = 'response', re.form = NA)) %>%
-  ggplot(aes(difference_population_mean, Survival, 
-             color = as.factor(av_population))) + 
-  geom_line(size = 1.2) + theme_bw() + 
+preds2b <- seagrass.brm6 |> 
+  emmeans(~av_population|difference_population, type = 'response', 
+          at = list(av_population = c(5, 15),
+                    difference_population = seq(min(seagrass$difference_population), 
+                                             max(seagrass$difference_population), length.out = 50))) |> 
+  as.tibble()
+
+figure_2b <- preds2b |> 
+  ggplot(aes(difference_population, response, 
+             color = as.factor(av_population),
+             fill = as.factor(av_population))) + 
+  geom_ribbon(mapping = aes(ymin = lower.HPD, ymax = upper.HPD), alpha = 0.2, colour = NA) +
+  geom_line(size = 1) + theme_bw() + 
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica"),
-        legend.position = c(0.15, 0.15)) +
-  scale_color_viridis(option = "viridis", name = "AV (ºC)", discrete = T) + 
-  ggtitle("Survival over temp difference - pop level") +
-  xlab("Temperature difference (ºC)") + ylab("Survival")
+        text=element_text(size=12,  family="Helvetica"),
+        legend.position = c(0.85, 0.85)) +
+  scale_color_viridis_d(option = "D", name = "AV (ºC)") + 
+  scale_fill_viridis_d(option = "D", name = "AV (ºC)")  +
+  labs(subtitle = 'b') + 
+  #ggtitle("Survival over temp difference - pop level") +
+  xlab("∆MAT (ºC)") + ylab("Survival")
 
 #final
 grid.arrange(figure_2a, figure_2b, nrow = 1)
-
-data.frame(difference_population_mean = c(rep(seq(0,35),3)),
-           av_population = c(rep(5, length.out = 36),
-                             rep(10, length.out = 36),
-                             rep(15, length.out = 36)),
-           LOGtime = log(24*14)) %>% #2-week MHW
-  mutate(Survival = predict(model2, ., type = 'response', re.form = NA)) %>%
-  filter(difference_population_mean == 15) %>%
-  dplyr::select(av_population, Survival)
 
 ##FIG. 3 - how predicted survival was calculated ----
 IDs <- read.csv('heatwaves_predicted.csv') %>%
@@ -366,7 +367,7 @@ raster('averages.tif') %>%
   geom_polygon(data = world, aes(x=long, y = lat, group = group), 
                col = 'black', fill = NA, size = 0.2)
 
-###EXTENDED DATA FIG ----
+# Extended data figures ----
 ##Extended Data Fig. 1 - survival vs mtwa species ----
 data.frame(mtwa_species_2_max = rep(seq(min(data$mtwa_species_2_max),
                                         max(data$mtwa_species_2_max),
@@ -446,32 +447,39 @@ heatwaves %>%
                       aesthetics = "colour")
                      
 
-###SUPPLEMENTARY INFORMATION ----
+# Supplementary Information ----
 ##Supplementary Fig. 1-2 - data distribution ----
 #SI Figure 1
-p <- ggplot(data, aes(Temperature, LOGtime, colour = Bioregion)) + 
+p <- ggplot(data, aes(Temperature, log(Time), colour = Bioregion)) + 
   geom_point(size = 3) + theme_bw() + theme(panel.grid.major = element_blank(), 
                                             panel.grid.minor = element_blank(),
-                                            text=element_text(size=16,  family="Helvetica"),
-                                            legend.position = c(0.2, 0.2)) + 
+                                            text = element_text(size=12,  
+                                                                family="Helvetica"),
+                                            legend.position = c(0.2, 0.3)) + 
   ylab("Duration (Hours, log scale)")
-ggMarginal(p, type="histogram") 
+p <- ggMarginal(p, type = "histogram")
+
+ggsave(file = paste0(FIGS_PATH, "/SF1.png"), 
+       width = 600, 
+       height = 600/1.6, 
+       units = "mm", 
+       dpi = 300)
   
 
 #SI Figure 2
-s <- data %>%
-  select(Genus, Species) %>%
-  mutate(name = paste0(substr(Genus, 1, 1), ". ", Species)) %>%
-  select(name) %>%
-  table() %>%
-  as_data_frame()
+s <- data  |> 
+  dplyr::select(Genus, Species) |> 
+  dplyr::mutate(name = paste0(substr(Genus, 1, 1), ". ", Species)) |> 
+  dplyr::select(name)  |> 
+  table()  |> 
+  as.data.frame()
 names(s) <- c('spp', 'freq')
 
-ggplot(s,aes(x=spp, y=freq)) + 
+s2 <- ggplot(s, aes(x = spp, y = freq)) + 
   geom_bar(stat = "identity") + theme_bw() + 
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank(),
-        text=element_text(size=16,  family="Helvetica"),
+        text=element_text(size = 12,  family="Helvetica"),
         axis.text.x = element_text(angle = 90, colour = 'black')) +
   xlab('') + ylab('Number of observations')
 
