@@ -5,7 +5,11 @@
 ## Packages ----
 library(ncdf4)
 library(raster)
-library(sp)
+library(sf)
+library(ggspatial)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(patchwork)
 library(maptools)
 library(scales)
 library(lme4)
@@ -29,10 +33,10 @@ data <- read.csv('data/processed/data_calculatedv2.csv') |>
 heatwaves <- read.csv('data/processed/heatwaves_calculated.csv') |> 
   dplyr::select(!(X))
 world <- map_data("world") #basemap
-projections_df <- read.csv('projections.csv') %>%
+projections_df <- read.csv('projections.csv') |> 
   dplyr::select(!(X))
-seagrasses <- readOGR('raw_data/SEAGRASSES/SEAGRASSES.shp') #seagrass species distributions
-seagrasses@data $ type <- c('Temperate', 'Temperate', 'Temperate', 'Temperate', #4
+seagrasses <- st_read('data/primary/SEAGRASSES/SEAGRASSES.shp') #seagrass species distributions
+seagrasses $ type <- c('Temperate', 'Temperate', 'Temperate', 'Temperate', #4
                             'Temperate', 'Tropical', 'Tropical', 'Temperate', #8
                             'Temperate', 'Temperate', 'Temperate', 'Temperate', #12
                             'Temperate', 'Tropical', 'Tropical', 'Tropical', #16
@@ -51,9 +55,9 @@ seagrasses@data $ type <- c('Temperate', 'Temperate', 'Temperate', 'Temperate', 
                             'Tropical', 'Tropical', 'Temperate', 'Tropical', #68
                             'Temperate', 'Temperate', 'Temperate', 'Tropical', #72
                             'Temperate', 'Temperate')
-seagrasses <- seagrasses[seagrasses@data$presence == 1,] #keep only presence = 1 (extant species on IUCN)
+seagrasses <- seagrasses[seagrasses$presence == 1,] #keep only presence = 1 (extant species on IUCN)
 seagrasses <- seagrasses[seagrasses$binomial != "Ruppia polycarpa",]  #removing problematic extents
-species <- seagrasses@data[,c(2,28)] #DF with only spp name and type
+species <- seagrasses |> dplyr::select(binomial) |> as.data.frame() #DF with only spp name and type
 env_current <- raster('env_current.tif')
 magnitude <- median(unlist(aggregate(heatwaves$difference_population_mean,
                                      by = c(heatwaves["Location"], heatwaves['Date']), 
@@ -93,7 +97,7 @@ ji <- function(xy, origin=c(0,0), cellsize=c(4,4)) {
 #FIG. 1c
 #loading data
 z_muelleri <- subset(data, data$Species == 'muelleri') #subset only for z_muelleri
-temp <- raster::stack("raw_data/sst.mon.mean.nc") %>% #load
+temp <- raster::stack("data/primary/sst.mon.mean.nc") %>% #load
   .[[((1960-1850)*12+1):nlayers(.)]] %>% #select period 1960 - present
   raster::rotate() #adjust longitude to -180,180
 
@@ -103,16 +107,33 @@ temp_df <- cbind(z_muelleri$Longitude[1], z_muelleri$Latitude[1]) %>% #put coord
   raster::extract(temp, ., method = "bilinear") %>% #extract temperatures for each sampling location
   as.data.frame() #create df
 
-par(cex = 1.6)
-data_plot <- data.table::transpose(temp_df) %>%
-  rename(temperature = V1) %>%
-  round(2) %>%
-  mutate(year = substr(names(temp_df), 2, 5) %>%
-           as.numeric()) %>%
-  .[1:660,] %>% #until collection date
-  ts(data = .[,1], start = 1960, end = 2014, frequency = 12) %>%
-  plot(ylab = "Temperature (ºC)", xlab = "Year")
-par(cex = 1, cex.main = 1)
+ts_data <- data.table::transpose(temp_df) |> 
+  dplyr::rename(temperature = V1) |> 
+  round(2) |> 
+  dplyr::mutate(year = substr(names(temp_df), 2, 5)  |> 
+                  as.numeric()) %>% 
+  .[1:660,] %>%  #until collection date
+  ts(data = .[,1], start = 1960, end = 2014, frequency = 12) 
+ts_data <- dplyr::tibble(Date = seq(from = as.Date("1960-01-01"), by = "month", length.out = length(ts_data)),
+                         Temperature = as.numeric(ts_data))
+
+ fig_1c <- ts_data |> 
+  ggplot(aes(x = Date, y = Temperature)) +
+  geom_line() +
+  scale_x_date(breaks = seq(from = as.Date("1960-01-01"), 
+                            to = as.Date("2014-01-01"), 
+                            by = "10 years"),
+               date_labels = "%Y") +  # Show only decades
+  geom_hline(yintercept = mean(ts_data$Temperature), linetype = 'dashed') +
+  geom_vline(xintercept = as.numeric(max(ts_data$Date)), size = 1.2) +
+  theme_bw() + theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      text=element_text(family="Helvetica"),
+                      legend.direction = 'horizontal',
+                      legend.position = c(0.4,0.11)) +
+  labs(x = element_blank(), y = "Temperature (°C)", subtitle = 'c') +
+  theme(plot.subtitle = element_text(hjust = 0.01, vjust = -5, margin = margin(2, 0, 0, 0), face = "bold"),
+        plot.margin = margin(0, 100, 0, 0)) 
 
 #FIG. 1b
 #extract data
@@ -135,67 +156,79 @@ for (a in 1960:2014) {
 MAT <- mean(na.omit(mat_species))
 
 #map
-df <- as.data.frame(MAT, xy = T) %>%
+df <- as.data.frame(MAT, xy = T) |> 
   na.omit()
 aus_nz <- extent(poly)+5
 aus_nz_poly <- subset(world, world$long > aus_nz@xmin &
                         world$long < aus_nz@xmax &
                         world$lat > aus_nz@ymin &
                         world$lat < aus_nz@ymax)
-poly_df <-  as.data.frame(poly, xy = T) %>%
+poly_df <-  as.data.frame(poly, xy = TRUE)  |> 
   na.omit()
 
-rast_map <- ggplot(df, aes(x, y)) + 
+rast_map <- ggplot() + 
   theme_bw() + theme(panel.grid.major = element_blank(),
                      panel.grid.minor = element_blank(),
-                     text=element_text(size=24,  family="Helvetica"),
+                     text = element_text(family = "Helvetica"),
                      legend.direction = 'horizontal',
-                     legend.position = c(0.4,0.11)) + 
-  geom_tile(aes(fill=layer)) +
-  scale_fill_viridis(option = "plasma", name = "MAT (ºC)") +
-  xlab("Longitude") + ylab("Latitude")
+                     legend.position = c(0.3,0.11),
+                     legend.background = element_blank()) + 
+  geom_tile(df, mapping = aes(x, y, fill=layer)) +
+  scale_fill_viridis_c(option = "plasma", name = "MAT (ºC)")
 
-rast_map + geom_polygon(data = aus_nz_poly, 
+fig_1b <- rast_map + geom_polygon(data = aus_nz_poly, 
                         aes(x=long, y = lat, group = group), fill = 'grey85') +
   geom_polygon(data = aus_nz_poly, 
                aes(x=long, y = lat, group = group), col = 'black', fill = NA, size = 0.2) +
-  geom_polygon(data = poly, aes(x=long, y = lat, group = group), col = 'black', fill = NA, 
+  geom_sf(data =  sf::st_sf(poly), col = 'black', fill = NA, 
                size = 0.3) +
-  geom_point(data = z_muelleri, aes(x = Longitude, y = Latitude, size = 4),
-             col= '#440154FF', alpha = 0.4)+ guides(size = F, alpha= F)
+  geom_point(data = z_muelleri, aes(x = Longitude, y = Latitude, size = 3),
+             col= 'black', alpha = 0.8)+ guides(size = F, alpha= F)  +
+  ylab('Latitude') + xlab('Longitude') +
+  labs(subtitle = 'b') +
+  scale_x_continuous(labels = scales::label_number(accuracy = 1), n.breaks = 3) +  # Remove directional labels for Longitude
+  scale_y_continuous(labels = scales::label_number(accuracy = 1), n.breaks = 3) +  # Remove directional labels for Latitude
+  theme(plot.subtitle = element_text(hjust = 0.01, vjust = -5, margin = margin(2, 0, 0, 0), face = "bold")) 
 
 
 #FIG. 1a
 #map
-fig_1a_base <- ggplot() + geom_polygon(data = world, aes(x=long, y = lat, 
+fig_1a_base <- ggplot() + geom_polygon(data = world |> dplyr::filter(region != 'Antarctica'), aes(x=long, y = lat, 
                                                      group = group), fill = 'grey85') +
-  geom_polygon(data = world, aes(x=long, y = lat, 
+  geom_polygon(data = world |> dplyr::filter(region != 'Antarctica'), aes(x=long, y = lat, 
                                  group = group), col = 'black', fill = NA, size = 0.2) + 
   coord_fixed(1.3) + theme_bw() + theme(panel.grid.major = element_blank(),
                                         panel.grid.minor = element_blank(),
-                                        text=element_text(size=24,  family="Helvetica"),
+                                        text=element_text(family="Helvetica"),
                                         legend.direction = 'horizontal',
-                                        legend.position = c(0.5,0.11)) + 
-  xlab("Longitude") + ylab("Latitude")
+                                        legend.position = c(0.15, 0.11),
+                                        legend.background = element_blank())
 
-sample_loc_aggregate <- cbind(data[,6:7], data %>%
-                                dplyr::select(Longitude, Latitude) %>%
-                                rename(X = Longitude, Y = Latitude) %>%
-                                cbind() %>%
-                                ji() %>%
-                                as.data.frame() %>%
-                                mutate(Cell = paste(X, Y)))
-fig_1a_base +  by(sample_loc_aggregate, sample_loc_aggregate$Cell,
-                  function(d) c(d$X[1], d$Y[1], nrow(d))) %>%
-  unlist() %>%
-  matrix(nrow = 3) %>%
-  as.data.frame() %>%
-  data.table::transpose() %>%
-  rename(X = V1, Y = V2, Cell = V3) %>%
-  geom_point(mapping = aes(X, Y, size = Cell, color = Cell, alpha = 0.6)) +
-  scale_size_continuous(range=c(4,12), breaks = c(5,15,35,50)) +
-  scale_color_viridis(option = "viridis", breaks = c(5,15,35,50),
-                      name = 'Number of \nobservations') + guides(size = F, alpha = F)
+sample_loc_aggregate <- cbind(data[,6:7], data |> 
+                                dplyr::select(Longitude, Latitude) |> 
+                                dplyr::rename(X = Longitude, Y = Latitude) |> 
+                                cbind() |> 
+                                ji() |> 
+                                as.data.frame() |> 
+                                dplyr::mutate(Cell = paste(X, Y)))
+fig_1a <- fig_1a_base +  by(sample_loc_aggregate, sample_loc_aggregate$Cell,
+                  function(d) c(d$X[1], d$Y[1], nrow(d))) |> 
+  unlist() |> 
+  matrix(nrow = 3) |> 
+  as.data.frame() |> 
+  data.table::transpose() |> 
+  dplyr::rename(X = V1, Y = V2, Cell = V3) |> 
+  geom_point(mapping = aes(X, Y, size = Cell, color = Cell, alpha = 0.7)) +
+  scale_size_continuous(range = c(4, 12), breaks = c(5, 20, 35, 50)) +
+  scale_color_viridis_c(option = "mako", breaks = c(5, 20, 35, 50), direction = -1,
+                      name = 'Obs.') + guides(size = F, alpha = F)  +
+  ylab('Latitude') + xlab('Longitude') +
+  labs(subtitle = 'a') +
+  theme(plot.subtitle = element_text(hjust = 0.01, vjust = -5, margin = margin(2, 0, 0, 0), face = "bold")) 
+
+### Final Figure 1 ----
+(fig_1a + fig_1b + plot_layout(axis_titles = 'collect'))  / wrap_elements(fig_1c)
+
 
 ##FIG. 2 - heatmap (temp and time) + survival over temp difference and AV (population) ----
 #FIG. 2a
