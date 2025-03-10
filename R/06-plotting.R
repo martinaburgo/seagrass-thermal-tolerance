@@ -18,9 +18,12 @@ library(gridExtra)
 library(maps)
 library(ggExtra)
 library(rgdal)
-library(viridis)
+library(emmeans)
 library(tidyverse)
 library(IDPmisc)
+
+library(terra)         # For raster handling
+
 
 ## Data ----
 data <- read.csv('data/processed/data_calculatedv2.csv') |> 
@@ -126,6 +129,14 @@ ts_data <- dplyr::tibble(Date = seq(from = as.Date("1960-01-01"), by = "month", 
                date_labels = "%Y") +  # Show only decades
   geom_hline(yintercept = mean(ts_data$Temperature), linetype = 'dashed') +
   geom_vline(xintercept = as.numeric(max(ts_data$Date)), size = 1.2) +
+  # MTWA:
+  geom_point(y = as.numeric(max(ts_data$Temperature)),
+             x = ts_data$Date[which.max(ts_data$Temperature)] , size = 2) +
+   # AV:
+   geom_point(y = ts_data$Temperature[which(ts_data$Date == '2010-02-01')],
+              x = ts_data$Date[which(ts_data$Date == '2010-02-01')], size = 2) +
+   geom_point(y = ts_data$Temperature[which(ts_data$Date == '2010-07-01')],
+              x = ts_data$Date[which(ts_data$Date == '2010-07-01')], size = 2) +
   theme_bw() + theme(panel.grid.major = element_blank(),
                       panel.grid.minor = element_blank(),
                       text=element_text(family="Helvetica"),
@@ -133,7 +144,7 @@ ts_data <- dplyr::tibble(Date = seq(from = as.Date("1960-01-01"), by = "month", 
                       legend.position = c(0.4,0.11)) +
   labs(x = element_blank(), y = "Temperature (°C)", subtitle = 'c') +
   theme(plot.subtitle = element_text(hjust = 0.01, vjust = -5, margin = margin(2, 0, 0, 0), face = "bold"),
-        plot.margin = margin(0, 100, 0, 0)) 
+        plot.margin = margin(0, 120, 0, 0)) 
 
 #FIG. 1b
 #extract data
@@ -227,25 +238,27 @@ fig_1a <- fig_1a_base +  by(sample_loc_aggregate, sample_loc_aggregate$Cell,
   theme(plot.subtitle = element_text(hjust = 0.01, vjust = -5, margin = margin(2, 0, 0, 0), face = "bold")) 
 
 ### Final Figure 1 ----
-(fig_1a + fig_1b + plot_layout(axis_titles = 'collect'))  / wrap_elements(fig_1c)
-
+(fig_1a + fig_1b + 
+   plot_layout(axis_titles = 'collect'))  / wrap_elements(fig_1c)
+#save as 12x7 inch
 
 ##FIG. 2 - heatmap (temp and time) + survival over temp difference and AV (population) ----
 #FIG. 2a
 preds2a <- seagrass.brm7 |> 
   emmeans(~Time|difference_species, type = 'response', 
           at = list(Time = seq(min(seagrass$Time), max(seagrass$Time), length.out = 50),
-                    difference_species = seq(min(seagrass$difference_species), 
+                    difference_species = seq(0, 
                                              max(seagrass$difference_species), length.out = 50))) |> 
-  as.tibble()
+  dplyr::as_tibble()
 
 figure_2a <- preds2a |> 
   ggplot(aes(x = Time, y = difference_species, fill = response)) + 
   geom_tile() + theme_bw() + theme(panel.grid.major = element_blank(),
                                    panel.grid.minor = element_blank(),
                                    text = element_text(size = 12,  family = "Helvetica"),
-                                   legend.position = c(0.8, 0.75),
-                                   legend.background = element_blank()) +
+                                   legend.position = c(0.88, 0.78),
+                                   plot.subtitle = element_text(hjust = 0.01, vjust = -5, 
+                                                                margin = margin(2, 0, 0, 0), face = "bold")) +
   scale_fill_viridis_c(option = "plasma", name = "Survival", direction = -1) +
   scale_x_continuous(name = 'Duration (days)',
     breaks = c(7*24, 14*24, 30*24, 60*24, 90*24), # Set the tick positions
@@ -257,11 +270,12 @@ figure_2a <- preds2a |>
 
 #FIG. 2b
 preds2b <- seagrass.brm6 |> 
-  emmeans(~av_population|difference_population, type = 'response', 
+  emmeans(~av_population|difference_population|Time, type = 'response', 
           at = list(av_population = c(5, 15),
                     difference_population = seq(min(seagrass$difference_population), 
-                                             max(seagrass$difference_population), length.out = 50))) |> 
-  as.tibble()
+                                             max(seagrass$difference_population), length.out = 50),
+                    Time = 14*24)) |> 
+  dplyr::as_tibble()
 
 figure_2b <- preds2b |> 
   ggplot(aes(difference_population, response, 
@@ -272,38 +286,68 @@ figure_2b <- preds2b |>
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         text=element_text(size=12,  family="Helvetica"),
-        legend.position = c(0.85, 0.85)) +
+        legend.position = c(0.9, 0.87),
+        plot.subtitle = element_text(hjust = 0.01, vjust = -5, margin = margin(2, 0, 0, 0), face = "bold")) +
   scale_color_viridis_d(option = "D", name = "AV (ºC)") + 
   scale_fill_viridis_d(option = "D", name = "AV (ºC)")  +
   labs(subtitle = 'b') + 
   #ggtitle("Survival over temp difference - pop level") +
   xlab("∆MAT (ºC)") + ylab("Survival")
 
+#Fig 2c - MTWA effect
+preds2c <- seagrass.brm6 |> 
+  emmeans(~mtwa_population|av_population|difference_population|Time, type = 'response', 
+          at = list(av_population = c(10),
+                    difference_population = seq(min(seagrass$difference_population), 
+                                                max(seagrass$difference_population), length.out = 50),
+                    Time = c(14*24),
+                    mtwa_population = c(20, 30))) |> 
+  dplyr::as_tibble()
+
+figure_2c <- preds2c |> 
+  ggplot(aes(difference_population, response, 
+             color = as.factor(mtwa_population),
+             fill = as.factor(mtwa_population))) + 
+  geom_ribbon(mapping = aes(ymin = lower.HPD, ymax = upper.HPD), alpha = 0.2, colour = NA) +
+  geom_line(size = 1) + theme_bw() + 
+  #facet_grid(~av_population) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text=element_text(size=12,  family="Helvetica"),
+        legend.position = c(0.87, 0.87),
+        plot.subtitle = element_text(hjust = 0.01, vjust = -5, margin = margin(2, 0, 0, 0), face = "bold")) +
+  scale_color_viridis_d(option = "D", name = "MTWA (ºC)") + 
+  scale_fill_viridis_d(option = "D", name = "MTWA (ºC)")  +
+  labs(subtitle = 'c') +
+  #ggtitle("Survival over temp difference - pop level") +
+  xlab("∆MAT (ºC)") + ylab("Survival")
+
+
 #final
-grid.arrange(figure_2a, figure_2b, nrow = 1)
+figure_2a +figure_2b + figure_2c + plot_layout(axes = 'collect')
 
 ##FIG. 3 - how predicted survival was calculated ----
-IDs <- read.csv('heatwaves_predicted.csv') %>%
-  dplyr::select(ID) %>%
+IDs <- read.csv('data/processed//heatwaves_predicted.csv') |> 
+  dplyr::select(ID) |> 
   unique()
 plots <- list()
 
 for (a in 1:nrow(IDs)) {
-  subset <- read.csv('heatwaves_predicted.csv') %>%
+  subset <- read.csv('data/processed//heatwaves_predicted.csv') |> 
     filter(ID == IDs[a,])
-  subset $ time <- exp(subset$LOGtime)
+  subset $ time <- exp(subset$Time)
    time_series <- 0
-   for (b in 1:length(subset$time)) {
-     point <- subset$time[b]/24
+   for (b in 1:length(subset$Time)) {
+     point <- subset$Time[b]/24
      time_point <- point + time_series[b]
      time_series <- c(time_series, time_point)
      } #this loop calculates the 'breaks'/days since beginning of MHW when temperatures changed
   
   time <- time_series
   
-  time <- c(0,cumsum(subset$time/24))
+  time <- c(0,cumsum(subset$Time/24))
   
-  survival <- c(1, subset$prediction)
+  survival <- c(1, subset$Predicted)
   cummSurvival <- cumprod(survival)
   
   temp <- subset$Temperature
@@ -366,6 +410,90 @@ heatwaves %>%
   xlab("Observed survial") + ylab("Predicted survival")
 
 ##FIG. 5 - most vulnerable areas and current magnitude ----
+# Load world map
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Custom color palette
+custom_colors <- c('#a50026','#d73027','#f46d43','#fdae61',
+                   '#fee08b','#ffffbf','#d9ef8b','#a6d96a',
+                   '#66bd63','#1a9850','#006837')
+
+# Function to process raster stack (cap values at 1)
+cap_raster_values <- function(raster_stack) {
+  raster_stack[raster_stack > 1] <- 1
+  return(raster_stack)
+}
+
+# Apply the function to both raster stacks
+pred_1w_stack <- cap_raster_values(pred_1w_stack)
+pred_2w_stack <- cap_raster_values(pred_2w_stack)
+
+# Function to convert raster to data frame for ggplot
+raster_to_df <- function(r, name) {
+  r_df <- as.data.frame(r, xy = TRUE, na.rm = TRUE)
+  colnames(r_df) <- c("x", "y", "value")
+  r_df$layer <- name
+  return(r_df)
+}
+
+# Extract layers from raster stacks and convert to data frames
+layers <- c("diff5", "diff10", "diff15")
+
+df_list <- list()
+for (i in seq_along(layers)) {
+  df_list[[layers[i]]] <- list(
+    pred_1w = raster_to_df(pred_1w_stack[[layers[i]]], layers[i]),
+    pred_2w = raster_to_df(pred_2w_stack[[layers[i]]], layers[i])
+  )
+}
+
+# Function to create a ggplot for each raster layer
+plot_raster <- function(df, title) {
+  ggplot() +
+    geom_tile(data = df, aes(x = x, y = y, fill = value)) +
+    geom_sf(data = world, fill = "grey85", color = "grey20", size = 0.1) +
+    scale_fill_gradientn(colors = custom_colors, limits = c(0, 1), na.value = "transparent") +
+    coord_sf() +
+    labs(title = title, x = "Longitude", y = "Latitude") +
+    theme_bw() +
+    theme(
+      legend.position = "none",  # Remove legend
+      plot.title = element_text(hjust = 0.5, size = 12, face = "bold"),
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 12),
+      axis.ticks = element_line(), # Ensure ticks are visible
+      #panel.grid.major = element_line(color = "gray90", size = 0.2), # Light gridlines
+      plot.margin = margin(5, 5, 5, 5), # Reduce extra space
+      plot.annotate = element_text(size = 16, hjust = 0, vjust = 1, face = "bold"), # Position annotation text
+      plot.title.position = "plot", # Title at the top of the plot
+      plot.subtitle.position = "plot" # Subtitle at the top of the plot
+    )
+}
+
+# Generate plots for each raster layer with formatted titles
+plots <- list()
+
+for (i in seq_along(layers)) {
+  layer_name <- gsub("diff", "", layers[i]) # Remove 'diff' prefix
+  formatted_title <- paste0("∆MAT = ", layer_name, "°C")
+  
+  plots[[paste0("p1_", layers[i])]] <- plot_raster(df_list[[layers[i]]]$pred_1w, formatted_title)
+  plots[[paste0("p2_", layers[i])]] <- plot_raster(df_list[[layers[i]]]$pred_2w, formatted_title)
+}
+
+# Arrange plots in 2 columns with column titles
+final_plot <- (plots$p1_diff5 + plots$p2_diff5) / 
+  (plots$p1_diff10 + plots$p2_diff10) / 
+  (plots$p1_diff15 + plots$p2_diff15) +
+  plot_annotation(
+    subtitle = c("1-week MHW", "2-week MHW"), # Column subtitles
+    tag_levels = "a",  # Adds 'a' and 'b' subtitles for columns
+    theme = theme(plot.subtitle = element_text(size = 14, hjust = 0.5, face = "bold"))
+  ) 
+
+# Show plot
+print(final_plot)
+
 #fig. 5a
 magnitude %>%
   as.data.frame(xy = T) %>%
@@ -401,66 +529,20 @@ raster('averages.tif') %>%
                col = 'black', fill = NA, size = 0.2)
 
 # Extended data figures ----
-##Extended Data Fig. 1 - survival vs mtwa species ----
-data.frame(mtwa_species_2_max = rep(seq(min(data$mtwa_species_2_max),
-                                        max(data$mtwa_species_2_max),
-                                        length.out = 40),3),
-           magnitude_species_1_mean = c(rep(2, 40),
-                                        rep(4, 40),
-                                        rep(6, 40)),
-           magnitude_population_mean = rep(mean(data$magnitude_population_mean),
-                                           120),
-           level = c(rep('Low', 40),
-                     rep('Medium', 40),
-                     rep('High', 40)),
-           LOGtime = rep(log(24*14), 120)) %>% #2-week MHW
-  mutate(Survival = predict(model4, ., type = 'response', re.form = NA)) %>%
-  ggplot(aes(mtwa_species_2_max, Survival, col = level)) + 
-  geom_line(size = 1.2) + theme_bw() + 
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica"),
-        legend.position = c(0.25, 0.86)) +
-  scale_color_viridis(option = "plasma", name = "Magnitude (ºC)", discrete = T,
-                      breaks = c('Low', 'Medium', 'High')) +
-  xlab("MTWA (ºC)") + ylab("Survival")
-
-##Extended Data Fig. 2 - survival over magnitude (population-level) ----
-quantile(data$magnitude_population_mean)
-data.frame(magnitude_species_1_mean = rep(mean(data$magnitude_species_1_mean), 150),
-           magnitude_population_mean = round(c(rep(1, 50),
-                                               rep(3, 50),
-                                               rep(5, 50)),2),
-           LOGtime = rep(seq(min(data$LOGtime), max(data$LOGtime), length.out = 50), 3)) %>% 
-  mutate(Survival = predict(model0, ., type = 'response', re.form = NA)) %>%
-  ggplot(aes(LOGtime, Survival, 
-             color = as.factor(magnitude_population_mean))) + 
-  geom_line(size = 1.2) + theme_bw() + 
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica"),
-        legend.position = c(0.28, 0.15)) +
-  scale_color_viridis(option = "viridis", name = "Magnitude of warming (ºC)", discrete = T) + 
-  ggtitle("Survival over mag - pop level") +
-  xlab("Duration (Hours, log scale)") + ylab("Survival")
-
-##Extended Data Fig. 3 - historical vs predicted with abiotic factors ----
-heatwaves %>%
-  group_by(ID) %>%
-  mutate(overall_prediction = prod(prediction)) %>%
-  mutate(duration = sum(exp(LOGtime))) %>%
-  distinct(ID,.keep_all = T) %>%
-  mutate(new_severity = ifelse(Severity == "N/A", NA,
-                               as.character(Severity))) %>%
-  ggplot() + geom_point(aes(Survival, overall_prediction, shape = Effect,
+##Extended Data Fig. 1 - historical vs predicted with abiotic factors ----
+dieoffs_final  |> 
+  mutate(new_severity = ifelse(severity == 0, NA,
+                               as.character(abiotic_factor_s_severity))) |> 
+  ggplot() + geom_abline() + 
+  geom_point(aes(Survival, Predicted, shape = effect_on_survival,
                             fill = new_severity, colour = new_severity),
-             size = 3, position = 'jitter') + geom_abline() + xlim(0,1) + ylim(0,1) + 
+             size = 2) + xlim(0,1) + ylim(0,1) + 
   theme_bw() + 
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica"),
+        text=element_text(size=12,  family="Helvetica"),
         legend.position = c(0.85, 0.35)) +
-  xlab("Observed survial") + ylab("Predicted survival") + 
+  xlab("Observed survival") + ylab("Predicted survival") + 
   scale_shape_manual(values = c(24, 21, 25),
                      name = 'Effect on \n survival',
                      breaks = c('Positive','Neutral', 'Negative')) + 
@@ -481,22 +563,18 @@ heatwaves %>%
                      
 
 # Supplementary Information ----
-##Supplementary Fig. 1-2 - data distribution ----
+##Supplementary Fig. 1 - data distribution ----
 #SI Figure 1
 p <- ggplot(data, aes(Temperature, log(Time), colour = Bioregion)) + 
   geom_point(size = 3) + theme_bw() + theme(panel.grid.major = element_blank(), 
                                             panel.grid.minor = element_blank(),
                                             text = element_text(size=12,  
                                                                 family="Helvetica"),
-                                            legend.position = c(0.2, 0.3)) + 
-  ylab("Duration (Hours, log scale)")
+                                            legend.position = c(0.2, 0.3),
+                                            plot.subtitle = element_text(hjust = 0.01, vjust = -5, 
+                                                                         margin = margin(2, 0, 0, 0), face = "bold")) + 
+  ylab("Duration (Hours, log scale)") + xlab('Temperature (ºC)')
 p <- ggMarginal(p, type = "histogram")
-
-ggsave(file = paste0(FIGS_PATH, "/SF1.png"), 
-       width = 600, 
-       height = 600/1.6, 
-       units = "mm", 
-       dpi = 300)
   
 
 #SI Figure 2
@@ -513,11 +591,22 @@ s2 <- ggplot(s, aes(x = spp, y = freq)) +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank(),
         text=element_text(size = 12,  family="Helvetica"),
-        axis.text.x = element_text(angle = 90, colour = 'black')) +
+        axis.text.x = element_text(angle = 90, colour = 'black'),
+        plot.subtitle = element_text(hjust = 0.01, vjust = -5, 
+                                     margin = margin(2, 0, 0, 0), face = "bold")) +
+  labs(subtitle = 'b') +
   xlab('') + ylab('Number of observations')
 
+wrap_elements(p) + s2 + plot_layout(ncol = 1)
 
-##Supplementary Fig. 3 - sampling effort ----
+ggsave(file = paste0(FIGS_PATH, "/SF1.png"), 
+       width = 600, 
+       height = 600/1.6, 
+       units = "mm", 
+       dpi = 300)
+
+
+##Supplementary Fig. 2 - sampling effort ----
 seagrasses_effort_raster <- seagrasses_effort/seagrasses_presence*100
 
 sampling_effort_map <- seagrasses_effort_raster %>% #calculate sampling effort
@@ -563,99 +652,3 @@ seagrasses_presence_map <- seagrasses_presence %>%
 grid.arrange(seagrasses_presence_map,
              sampling_effort_map,
              nrow = 2)
-
-##Supplementary Fig. 4 - current AV ----
-env_current %>% 
-  as.data.frame(xy = T) %>%
-  na.omit() %>%
-  ggplot(aes(x, y)) + geom_tile(aes(fill=env_current), show.legend = T) + theme_bw() + 
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica")) +
-  scale_fill_viridis(option = "viridis", name = "AV (ºC)") +
-  xlab("Longitude") + ylab("Latitude") + ggtitle("Current AV") +
-  geom_polygon(data = world, aes(x=long, y = lat, group = group), 
-               fill = 'lightgrey') +
-  geom_polygon(data = world, aes(x=long, y = lat, group = group), 
-               col = 'black', fill = NA, size = 0.2)
-
-##Supplementary Fig. 5 - current magnitude risk ----
-magnitudes_list <- list() #create list to store the rasters for each magnitude + spp
-for (i in 1:nrow(species)) {
-  spp <- as.character(species$binomial[i]) #get species name
-  poly <- seagrasses[seagrasses@data$binomial == spp,] #subset spp polygon
-  crop <- raster::crop(magnitude,poly) %>%
-    raster::mask(.,poly)
-  magnitudes_list[[i]] <- crop
-}
-
-#calculating average magnitude for each grid cell
-magnitudes_stack <- stack()
-for (i in 1:length(magnitudes_list)) {
-  xx <- resample(magnitudes_list[[i]], env_current) #adjust the extent so that it's the same
-  magnitudes_stack <- addLayer(magnitudes_stack, xx)
-}
-
-mean_magnitudes <- stackApply(magnitudes_stack,
-                              indices = c(rep(1, nlayers(magnitudes_stack))),
-                              fun = na.omit(mean))
-
-mean_magnitudes %>% 
-  as.data.frame(xy = T) %>%
-  na.omit() %>%
-  ggplot(aes(x, y)) + geom_tile(aes(fill=index_1), show.legend = T) + theme_bw() + 
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica")) +
-  scale_fill_viridis(option = "viridis", name = "Average\nmagnitude") +
-  xlab("Longitude") + ylab("Latitude") + ggtitle("Magnitude - species") +
-  geom_polygon(data = world, aes(x=long, y = lat, group = group), 
-               fill = 'lightgrey') +
-  geom_polygon(data = world, aes(x=long, y = lat, group = group), 
-               col = 'black', fill = NA, size = 0.2)
-
-##Supplementary Fig. 6 - distribution of tropical and temperate seagrass species ----
-raster_number <- raster(nrows = 180, ncols = 360, #create a raster as a reference to 'rasterize' the polygons
-                        xmn = -180, xmx = 180, 
-                        ymn = -90, ymx = 90)
-crs(raster_number) <- '+proj=longlat +datum=WGS84 +no_defs'
-
-trop_presence_raster <- seagrasses[seagrasses@data$type == 'Tropical',] %>%
-  rasterize(raster_number, field = 1, 
-            fun = sum, na.rm = T)
-perc_trop <- trop_presence_raster/seagrasses_presence*100
-
-prop_trop_spp_raster <- seagrasses_presence %>%
-  reclassify(c(0, 19, 0)) %>%
-  raster::merge(perc_trop, .)
-
-prop_trop_spp_raster %>% 
-  as.data.frame(xy = T) %>%
-  na.omit() %>%
-  ggplot(aes(x, y)) + geom_tile(aes(fill=layer), show.legend = T) + theme_bw() + 
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica")) +
-  scale_fill_viridis(option = "plasma", name = "Tropical\nspecies (%)") +
-  xlab("Longitude") + ylab("Latitude") +
-  geom_polygon(data = world, aes(x=long, y = lat, group = group), 
-               fill = 'lightgrey') +
-  geom_polygon(data = world, aes(x=long, y = lat, group = group), 
-               col = 'black', fill = NA, size = 0.2)
-
-layerStats(stack(raster('averages.tif'), prop_trop_spp_raster,
-                 mean_magnitudes, reclassify(magnitude, c(12, Inf, 12))), 
-           'pearson', na.rm = T)
-grid.arrange(projections_df %>%
-  ggplot(aes(x=type, y=av_species)) +
-  geom_boxplot() + theme_bw() + 
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica")) +
-  xlab("") + ylab("AV (ºC)"), projections_df %>%
-  ggplot(aes(x=type, y=mtwa_species)) +
-  geom_boxplot() + theme_bw() + 
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        text=element_text(size=24,  family="Helvetica")) +
-  xlab("") + ylab("MTWA (ºC)"), ncol = 2)

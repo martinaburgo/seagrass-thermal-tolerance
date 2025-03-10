@@ -356,7 +356,7 @@ loo::loo_compare(rstan::loo(seagrass.brm1),
 ## Model 6: effect of local climate on survival ----
 
 ### Fit the model ----
-brm6.form <- bf(Survival ~ scale(log(Time)) * scale(difference_population) + scale(av_population) + scale(mtwa_population) + Type + (1|Study) + (1|Species),
+brm6.form <- bf(Survival ~ scale(log(Time)) + scale(difference_population) * scale(av_population) + scale(mtwa_population) + Type + (1|Study) + (1|Species),
                 family = zero_one_inflated_beta())
 
 get_prior(brm6.form, data = seagrass)
@@ -417,7 +417,7 @@ seagrass.brm6 |>
                   Pl = ~ mean(.x < 1),
                   Pg = ~ mean(.x > 1)) |>
   as_tibble() |>
-  dplyr::slice(1:8)
+  dplyr::slice(1:11)
 
 seagrass.brm6 |> 
   emmeans(~difference_population|av_population, at = list(difference_population = seq(min(seagrass$difference_population),
@@ -425,12 +425,13 @@ seagrass.brm6 |>
                                                                                       length.out = 50),
                                                           av_population = c(5, 15))) |>
   gather_emmeans_draws() |>
-  summarise(median_hdci(.value))
+  mutate(across(everything(), exp)) |>
+  summarise(median_hdci(.value)) |> View()
 
 ## Model 7: effect of species-level climate on survival ----
 
 ### Fit the model ----
-brm7.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) + scale(av_species) + scale(mtwa_species) + Type + (1|Study) + (1|Species),
+brm7.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) * scale(av_species) + scale(mtwa_species) + Type + (1|Study) + (1|Species),
                 family = zero_one_inflated_beta())
 
 get_prior(brm7.form, data = seagrass)
@@ -490,7 +491,7 @@ seagrass.brm7 |>
                   Pl = ~ mean(.x < 1),
                   Pg = ~ mean(.x > 1)) |>
   as_tibble() |>
-  dplyr::slice(1:8)
+  dplyr::slice(1:11)
 
 seagrass.brm7 |> 
   emmeans(~Time|difference_species, type = 'response', 
@@ -505,6 +506,7 @@ seagrass.brm7 |>
                                                          length.out = 50),
                                               difference_species = c(2, 5, 10, 15, 20, 25, 30))) |>
   gather_emmeans_draws() |>
+  mutate(across(everything(), exp)) |>
   summarise(median_hdci(.value),
             Pg = mean(.value > 0.5))
 
@@ -580,7 +582,7 @@ seagrass.brm8 |>
   plot(points = TRUE, ask = FALSE)
 
 seagrass.brm8 |>
-  as_draws_df() |>
+  brms::as_draws_df() |>
   mutate(across(everything(), exp)) |> #to go from log scale to odds ratio
   summarise_draws(median, HDInterval::hdi, rhat, length, ess_bulk, ess_tail,
                   Pl = ~ mean(.x < 1),
@@ -592,7 +594,7 @@ seagrass.brm8 |>
 ## Model 9: mixed model (pop + spp) ----
 
 ### Fit the model ----
-brm9.form <- bf(Survival ~ scale(log(Time)) + scale(difference_species) + scale(av_population) + scale(mtwa_population) + Type + (1|Study) + (1|Species),
+brm9.form <- bf(Survival ~ scale(log(Time)) * scale(difference_species) * scale(av_population) + scale(mtwa_population) + Type + (1|Study) + (1|Species),
                 family = zero_one_inflated_beta())
 
 get_prior(brm9.form, data = seagrass)
@@ -604,7 +606,7 @@ seagrass |>
 
 priors9 <- prior(normal(-4, 4), class = 'Intercept') +
   prior(normal(0, 5), class = 'b') + 
-  prior(student_t(3, 0,5), class = 'sd')  +
+  prior(student_t(3, 0, 5), class = 'sd')  +
   prior(gamma(0.01, 0.01), class = 'phi') +
   prior(beta(1, 1), class = 'zoi') +
   prior(beta(1, 1), class = 'coi')
@@ -655,7 +657,7 @@ seagrass.brm9 |>
                   Pl = ~ mean(.x < 1),
                   Pg = ~ mean(.x > 1)) |>
   as_tibble() |>
-  dplyr::slice(1:7)
+  dplyr::slice(1:11)
 
 ## Compare ----
 loo::loo_compare(rstan::loo(seagrass.brm6),

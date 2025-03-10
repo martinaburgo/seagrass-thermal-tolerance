@@ -234,7 +234,7 @@ pred_1w_stack <- addLayer(stackApply(pred_1w_diff5,
                     fun = na.omit(mean)))
 names(pred_1w_stack) <- c('diff5', 'diff10', 'diff15')
 
-writeRaster(pred_1w_stack, filename = 'data/processed/pred_1w_stack.grd')
+writeRaster(pred_1w_stack, filename = 'data/processed/pred_1w_stack.grd', overwrite = TRUE)
 
 
 ## TWO WEEKS
@@ -284,4 +284,70 @@ pred_2w_stack <- addLayer(stackApply(pred_2w_diff5,
                                      fun = na.omit(mean)))
 names(pred_2w_stack) <- c('diff5', 'diff10', 'diff15')
 
-writeRaster(pred_2w_stack, filename = 'data/processed/pred_2w_stack.grd')
+writeRaster(pred_2w_stack, filename = 'data/processed/pred_2w_stack.grd', overwrite = TRUE)
+
+# Estimates ----
+raster_data <- pred_1w_stack$diff5
+
+## Tropics vs Temperate ----
+# Define extents
+tropics_extent <- extent(-180, 180, -23.5, 23.5)  # Between -23.5 and 23.5
+outside_tropics_south_extent <- extent(-180, 180, -90, -23.5)  # South of -23.5
+outside_tropics_north_extent <- extent(-180, 180, 23.5, 90)  # North of 23.5
+
+# Convert extents to SpatialPolygons and rasterize
+mask_tropics <- rasterize(as(tropics_extent, "SpatialPolygons"), raster_data)
+mask_outside_south <- rasterize(as(outside_tropics_south_extent, "SpatialPolygons"), raster_data)
+mask_outside_north <- rasterize(as(outside_tropics_north_extent, "SpatialPolygons"), raster_data)
+
+# Mask the raster to extract values
+raster_tropics <- mask(raster_data, mask_tropics)
+raster_outside_south <- mask(raster_data, mask_outside_south)
+raster_outside_north <- mask(raster_data, mask_outside_north)
+
+# Combine the two "outside tropics" regions
+raster_outside_tropics <- mosaic(raster_outside_south, raster_outside_north, fun = "mean")
+
+# Compute mean and standard deviation
+mean_tropics <- cellStats(raster_tropics, stat = 'mean')
+sd_tropics <- cellStats(raster_tropics, stat = 'sd')
+n_tropics <- sum(!is.na(values(raster_tropics)))
+sem_tropics <- sd_tropics / sqrt(n_tropics)  # Standard Error of the Mean
+
+mean_outside_tropics <- cellStats(raster_outside_tropics, stat = 'mean')
+sd_outside_tropics <- cellStats(raster_outside_tropics, stat = 'sd')
+n_outside_tropics <- sum(!is.na(values(raster_outside_tropics)))
+sem_outside_tropics <- sd_outside_tropics / sqrt(n_outside_tropics)  # Standard Error of the Mean
+
+# Print results
+cat("Tropics (-23.5 to 23.5) - Mean:", mean_tropics, " SEM:", sem_tropics, "\n")
+cat("Outside Tropics (< -23.5 or > 23.5) - Mean:", mean_outside_tropics, " SEM:", sem_outside_tropics, "\n")
+
+## Northern vs Southern ----
+# Define extents for Northern and Southern Hemisphere
+north_extent <- extent(-180, 180, 0, 90)
+south_extent <- extent(-180, 180, -90, 0)
+
+# Convert extents to SpatialPolygons and rasterize them
+mask_north <- rasterize(as(north_extent, "SpatialPolygons"), raster_data)
+mask_south <- rasterize(as(south_extent, "SpatialPolygons"), raster_data)
+
+# Mask the raster to extract values for each hemisphere
+raster_north <- mask(raster_data, mask_north)
+raster_south <- mask(raster_data, mask_south)
+
+# Compute mean and standard deviation for both hemispheres
+mean_north <- cellStats(raster_north, stat = 'mean')
+sd_north <- cellStats(raster_north, stat = 'sd')
+n_north <- sum(!is.na(values(raster_north)))  # Count valid (non-NA) cells
+sem_north <- sd_north / sqrt(n_north)  # Standard Error of the Mean
+
+mean_south <- cellStats(raster_south, stat = 'mean')
+sd_south <- cellStats(raster_south, stat = 'sd')
+n_south <- sum(!is.na(values(raster_south)))  # Count valid (non-NA) cells
+sem_south <- sd_south / sqrt(n_south)  # Standard Error of the Mean
+
+# Print results
+cat("Northern Hemisphere (lat > 0) - Mean:", mean_north, " SEM:", sem_north, "\n")
+cat("Southern Hemisphere (lat < 0) - Mean:", mean_south, " SEM:", sem_south, "\n")
+
